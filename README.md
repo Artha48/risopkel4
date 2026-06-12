@@ -82,5 +82,3 @@ Aplikasi ini 100% Client-Side pada sisi depan, sehingga Anda tidak perlu mengins
 
 ## 👥 Pengembang (Credits)
 Dibuat dengan ❤️ oleh **Kelompok 4 - Riset Operasi (Semester 6)** untuk memenuhi tugas akhir mata kuliah.
-
-*(Dokumentasi dan struktur kode telah disusun sedemikian rupa menggunakan prinsip Clean Code agar mudah dipelajari, diaudit, maupun dikembangkan di masa mendatang).*
