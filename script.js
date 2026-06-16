@@ -1,4 +1,4 @@
-const API_URL = 'http://127.0.0.1:8000';
+const API_URL = 'https://shortcake-opossum-splashy.ngrok-free.dev';
 
 document.addEventListener('DOMContentLoaded', () => {
     // Check API status
