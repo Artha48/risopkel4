@@ -68,7 +68,8 @@ Buka terminal / Command Prompt (CMD) di dalam *root* folder proyek ini, lalu jal
 pip install -r requirements.txt
 
 # Nyalakan server FastAPI
-uvicorn backend.main:app --reload
+python -m uvicorn backend.main:app --reload
+
 ```
 > **Penting:** Biarkan terminal tetap terbuka. Anda akan melihat keterangan bahwa server berjalan di `http://127.0.0.1:8000`.
 
