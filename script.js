@@ -199,6 +199,10 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('results-container').style.display = 'none';
         });
 
+        document.getElementById('input-method').addEventListener('change', function() {
+            document.getElementById('results-container').style.display = 'none';
+        });
+
         // Sembunyikan hasil jika tabel matriks diubah
         document.getElementById('matrix-container').addEventListener('input', () => {
             document.getElementById('results-container').style.display = 'none';
