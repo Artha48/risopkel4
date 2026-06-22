@@ -14,20 +14,26 @@
 
 ## 📖 Deskripsi Proyek
 **OptiPath** adalah sebuah aplikasi web yang mengimplementasikan pemecahan masalah matematis dari mata kuliah Riset Operasi. Dibangun menggunakan arsitektur modern (*Frontend-Backend terpisah*) oleh **Kelompok 4 (RISOP)**. Aplikasi ini memungkinkan pengguna untuk memecahkan dua masalah optimasi klasik:
-1. **Assignment Model** menggunakan Algoritma Hungarian.
-2. **Project Scheduling** menggunakan Teori Jaringan CPM (*Critical Path Method*).
+1. **Metode Penugasan** menggunakan Algoritma Hungarian.
+2. **Teori Jaringan** menggunakan *Critical Path Method* (CPM).
 
 ---
 
 ## 🚀 Fitur Utama
-- **Modul 1: Algoritma Hungarian**
+- **Modul 1: Metode Penugasan (Algoritma Hungarian)**
   - Pemecahan kasus Minimasi & Maksimasi.
-  - Tabel matriks dinamis (Batas min. 8x8 hingga maks. 20x20).
+  - Tabel matriks dinamis (Batas min. 8×8 hingga maks. 20×20).
   - Penjelasan transformasi matriks secara transparan per-langkah (*Step-by-step*).
   - Generator angka acak (Randomize).
-- **Modul 2: Critical Path Method (CPM)**
+
+- **Modul 2: Teori Jaringan (CPM — *Critical Path Method*)**
   - Pengurutan Topologis dan kalkulasi *Forward/Backward Pass* yang akurat.
-  - Perhitungan *Earliest Start/Finish*, *Latest Start/Finish*, dan *Slack/Float*.
+  - **Perhitungan Detail Step-by-Step** (5 langkah terstruktur):
+    1. **Langkah 1** — Identifikasi urutan kegiatan & struktur jaringan.
+    2. **Langkah 2** — *Forward Pass*: perhitungan ES & EF per kegiatan dengan rumus.
+    3. **Langkah 3** — *Backward Pass*: perhitungan LF & LS per kegiatan dengan rumus.
+    4. **Langkah 4** — Kalkulasi Slack/Float & penentuan jalur kritis.
+    5. **Langkah 5** — Tabel rekap hasil lengkap (ES, EF, LS, LF, Slack, Status).
   - Pembuatan **Network Diagram** secara otomatis (interaktif) menggunakan `vis.js`.
   - Penandaan Jalur Kritis (*Critical Path*) secara visual.
   - Validasi *Real-Time* (Anti-Duplicate ID) dan *Dirty-State Reset*.
@@ -42,8 +48,8 @@
  ┃ ┣ 📜 hungarian_solver.py      # Kelas algoritma Hungarian + SciPy
  ┃ ┗ 📜 cpm_solver.py            # Kelas pengolahan DAG dan Slack
  ┣ 📂 frontend/
- ┃ ┣ 📜 index.html               # Antarmuka web (UI)
- ┃ ┗ 📜 script.js                # Manipulasi DOM dan integrasi API
+ ┃ ┣ 📜 index.html               # Antarmuka web (UI) — Sidebar & layout utama
+ ┃ ┗ 📜 script.js                # Manipulasi DOM, integrasi API, & rendering step-by-step
  ┣ 📜 MANUAL_BOOK_CODE.md        # Panduan penjelasan teknis arsitektur kode
  ┣ 📜 TESTING_DOKUMENTASI.md     # Dokumen pengujian Uji Kelayakan Sistem (Testing)
  ┗ 📜 requirements.txt           # Daftar pustaka (dependencies) Python
@@ -69,12 +75,11 @@ pip install -r requirements.txt
 
 # Nyalakan server FastAPI
 python -m uvicorn backend.main:app --reload
-
 ```
 > **Penting:** Biarkan terminal tetap terbuka. Anda akan melihat keterangan bahwa server berjalan di `http://127.0.0.1:8000`.
 
 ### 3. Memulai Antarmuka Frontend
-Aplikasi ini 100% Client-Side pada sisi depan, sehingga Anda tidak perlu menginstal server Node.js.
+Aplikasi ini 100% *Client-Side* pada sisi depan, sehingga Anda tidak perlu menginstal server Node.js.
 - Buka folder `frontend/`
 - Klik dua kali pada file `index.html` untuk membukanya di peramban.
 - Perhatikan pojok kanan atas layar; jika tertulis **API Backend: Connected 🟢**, selamat! Aplikasi siap digunakan.
