@@ -1,16 +1,16 @@
 # Dokumentasi Skenario Pengujian (Testing)
-**Proyek:** OptiPath - Solver Modules (Hungarian & CPM)  
+**Proyek:** OptiPath - Solver Modules (Metode Penugasan & Teori Jaringan)  
 **Tim:** Kelompok 4 Riset Operasi (RISOP)
 
 Dokumen ini memuat skenario pengujian (Test Cases) yang digunakan untuk memverifikasi fungsionalitas, logika bisnis, dan penanganan kesalahan (Error Handling) dari aplikasi OptiPath.
 
 ---
 
-## 🏗️ Modul 1: Model Penugasan (Hungarian Algorithm)
+## 🏗️ Modul 1: Metode Penugasan (Hungarian Algorithm)
 
 ### Skenario 1.1: Validasi Batas Ukuran Matriks
 - **Langkah Pengujian:** Mengubah input "Jumlah Baris" atau "Jumlah Kolom" menjadi nilai di bawah 8 atau di atas 20.
-- **Hasil yang Diharapkan:** Aplikasi menampilkan pesan error bahwa dimensi minimal adalah 8x8 dan maksimal 20x20, lalu menolak membuat tabel.
+- **Hasil yang Diharapkan:** Aplikasi menampilkan pesan error bahwa dimensi minimal adalah 8×8 dan maksimal 20×20, lalu menolak membuat tabel.
 - **Status:** ✅ LULUS (*PASS*)
 
 ### Skenario 1.2: Fungsionalitas Pengisian Otomatis (Random)
@@ -33,7 +33,7 @@ Dokumen ini memuat skenario pengujian (Test Cases) yang digunakan untuk memverif
 
 ---
 
-## 🕸️ Modul 2: Teori Jaringan (Critical Path Method - CPM)
+## 🕸️ Modul 2: Teori Jaringan (Critical Path Method — CPM)
 
 ### Skenario 2.1: Validasi Batas Kapasitas Kegiatan
 - **Langkah Pengujian:** Menghapus baris hingga tersisa 7 kegiatan, lalu menekan "Hitung Jalur Kritis". Kemudian mencoba menambahkan lebih dari 20 kegiatan.
@@ -60,7 +60,17 @@ Dokumen ini memuat skenario pengujian (Test Cases) yang digunakan untuk memverif
 - **Hasil yang Diharapkan:** API menghitung nilai Earliest Start (ES), Earliest Finish (EF), Latest Start (LS), Latest Finish (LF), dan Slack secara sempurna. Kegiatan yang memiliki nilai `Slack = 0` otomatis ditandai sebagai Jalur Kritis.
 - **Status:** ✅ LULUS (*PASS*)
 
-### Skenario 2.6: Visualisasi Interaktif Network Diagram
+### Skenario 2.6: Tampilan Perhitungan Detail Step-by-Step (5 Langkah)
+- **Langkah Pengujian:** Menjalankan kalkulasi CPM dengan data lengkap, lalu memeriksa section "Perhitungan Detail Step-by-Step" di bawah hasil.
+- **Hasil yang Diharapkan:** Aplikasi menampilkan 5 *step-card* terstruktur:
+  1. **Langkah 1** — Tabel urutan topologis & daftar predecessor tiap kegiatan.
+  2. **Langkah 2** — *Forward Pass*: rumus `ES = max(EF predecessor)` dan `EF = ES + Durasi` ditampilkan per kegiatan. Kegiatan kritis diberi badge merah "KRITIS".
+  3. **Langkah 3** — *Backward Pass*: rumus `LF = min(LS successor)` dan `LS = LF − Durasi` ditampilkan per kegiatan.
+  4. **Langkah 4** — Kalkulasi Slack: kartu per kegiatan dengan rumus `Slack = LS − ES`.
+  5. **Langkah 5** — Tabel rekap lengkap dengan kolom Status (⚡ Kritis / Normal).
+- **Status:** ✅ LULUS (*PASS*)
+
+### Skenario 2.7: Visualisasi Interaktif Network Diagram
 - **Langkah Pengujian:** Memeriksa area bawah hasil kalkulasi CPM. Melakukan *Zoom in/out* dan menggeser (*drag*) salah satu lingkaran node kegiatan.
 - **Hasil yang Diharapkan:** Diagram vis.js berhasil dirender secara dinamis. Garis panah menunjukkan urutan *Predecessor* dengan benar. Node yang berada pada Jalur Kritis diwarnai merah mencolok. Diagram bersifat interaktif (bisa ditarik dan di-*zoom*).
 - **Status:** ✅ LULUS (*PASS*)
@@ -70,4 +80,11 @@ Dokumen ini memuat skenario pengujian (Test Cases) yang digunakan untuk memverif
 ## 🔒 Uji Keamanan Status Kotor (Dirty State Reset)
 - **Langkah Pengujian:** Menjalankan optimasi hingga hasil perhitungan keluar. Setelah itu, secara iseng mengubah satu angka durasi / biaya di dalam tabel input.
 - **Hasil yang Diharapkan:** Begitu tabel diklik dan diketik, **seluruh kontainer hasil hitungan lama akan otomatis disembunyikan/hilang**. Ini menghindari kesalahan fatal di mana pengguna membaca hasil analisis lama padahal data input baru saja diubah.
+- **Status:** ✅ LULUS (*PASS*)
+
+---
+
+## 🧭 Uji Navigasi Sidebar
+- **Langkah Pengujian:** Mengeklik menu 🏠 **Home**, 🏢 **Metode Penugasan**, dan 📈 **Teori Jaringan** secara bergantian.
+- **Hasil yang Diharapkan:** Setiap item sidebar memuat konten modul yang sesuai secara dinamis. Breadcrumb di topbar berubah mengikuti modul yang aktif. Emoji 🏠 Home tampil dengan opacity penuh (100%).
 - **Status:** ✅ LULUS (*PASS*)
