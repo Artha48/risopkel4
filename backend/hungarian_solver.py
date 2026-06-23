@@ -15,11 +15,6 @@ class HungarianSolver:
 
         # Jadikan matriks persegi dengan padding nol jika perlu
         self.N = max(self.num_rows, self.num_cols)
-        
-        # Error Handling: Memastikan ukuran berada dalam rentang wajar agar tidak terjadi Memory Overflow
-        if not (8 <= self.num_rows <= 20) or not (8 <= self.num_cols <= 20):
-            raise ValueError(f"Ukuran matriks penugasan harus antara 8x8 dan 20x20. Saat ini: {self.num_rows}x{self.num_cols}")
-
         self.padded_matrix = np.zeros((self.N, self.N), dtype=float)
         self.padded_matrix[:self.num_rows, :self.num_cols] = self.original_matrix
 
