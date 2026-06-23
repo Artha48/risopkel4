@@ -269,7 +269,53 @@ def solve_cpm(req: CPMRequest):
             for k, v in req.activities.items()
         }
 
+        # ── VALIDASI BACKEND: Jumlah Kegiatan (8–20) ───────────────────────
+        # Validasi ini WAJIB ada di sisi backend sebagai lapis kedua keamanan.
+        # Frontend sudah memvalidasi, namun request langsung ke API (misal via
+        # Postman/curl) dapat melewati validasi frontend sepenuhnya.
+        # Batasan 8–20 kegiatan sesuai spesifikasi soal Riset Operasi.
+        num_activities = len(activities_data)
+        if num_activities == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Tidak ada kegiatan yang dikirim. Harap masukkan minimal 8 kegiatan."
+            )
+        if num_activities < 8:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Jumlah kegiatan terlalu sedikit: {num_activities}. "
+                    "Sistem membutuhkan minimal 8 kegiatan untuk dapat diproses. "
+                    "Harap tambahkan kegiatan hingga mencapai minimal 8."
+                )
+            )
+        if num_activities > 20:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Jumlah kegiatan terlalu banyak: {num_activities}. "
+                    "Sistem hanya mendukung maksimal 20 kegiatan untuk menjaga "
+                    "performa kalkulasi dan keterbacaan diagram. "
+                    "Harap kurangi jumlah kegiatan hingga maksimal 20."
+                )
+            )
+
+        # ── VALIDASI BACKEND: Durasi Tidak Boleh Negatif ───────────────────
+        # Durasi negatif secara fisik tidak mungkin terjadi. Validasi ini
+        # mencegah Forward Pass menghasilkan nilai EF yang tidak logis.
+        for act_id, act in activities_data.items():
+            if act["duration"] < 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Durasi kegiatan '{act_id}' bernilai negatif ({act['duration']}). "
+                        "Durasi kegiatan harus bernilai nol atau positif."
+                    )
+                )
+
         # ── Instansiasi dan jalankan CPMSolver ─────────────────────────────
+        # CPMSolver akan melakukan: _topological_sort (Kahn's Algorithm + deteksi
+        # Circular Dependency) → Forward Pass → Backward Pass → Slack → Jalur Kritis.
         solver = CPMSolver(activities_data)
         activities_result, total_duration, critical_paths = solver.solve()
 
@@ -282,15 +328,22 @@ def solve_cpm(req: CPMRequest):
             "activities":     activities_result,   # Dict semua kegiatan + nilai ES/EF/LS/LF/Slack
             "total_duration": total_duration,      # Durasi total proyek (hari)
             "critical_paths": critical_paths,      # Semua jalur kritis [ ['A','D','E'], ... ]
-            "graphviz_dot":   graphviz_dot         # Kode DOT untuk Graphviz (tidak digunakan Vis.js)
+            "graphviz_dot":   graphviz_dot         # Kode DOT untuk Graphviz
         }
 
+    except HTTPException:
+        # Re-raise HTTPException yang kita lempar sendiri di atas (validasi manual)
+        # agar tidak tertangkap oleh catch-all Exception di bawah
+        raise
+
     except ValueError as ve:
-        # ValueError dari CPMSolver: Circular Dependency, predecessor tidak valid, dsb.
-        # Pesan error dari solver sudah informatif dan ramah pengguna.
+        # ValueError dari CPMSolver:
+        #   - Circular Dependency (Kahn's Algorithm mendeteksi siklus)
+        #   - Predecessor tidak terdaftar
+        # Pesan error dari solver sudah informatif dan ramah pengguna (Bahasa Indonesia).
         raise HTTPException(status_code=400, detail=str(ve))
 
     except Exception as e:
         # Catch-all: mencegah server crash total akibat bug internal yang tidak terduga.
-        # Di lingkungan produksi, log exception ini ke sistem monitoring.
-        raise HTTPException(status_code=500, detail=str(e))
+        # Di lingkungan produksi, log exception ini ke sistem monitoring (Sentry, dsb).
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
