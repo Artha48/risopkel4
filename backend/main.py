@@ -1,118 +1,296 @@
+"""
+==============================================================================
+main.py
+
+Entry Point Backend API untuk Aplikasi OptiPath.
+Dibangun menggunakan FastAPI — framework Python modern untuk REST API.
+
+Endpoint yang tersedia:
+  GET  /                       → Health check (cek status server)
+  POST /api/solve/hungarian    → Modul 1: Algoritma Hungarian (Assignment Problem)
+  POST /api/solve/cpm          → Modul 2: Critical Path Method (Penjadwalan Proyek)
+
+Arsitektur:
+  - Validasi input dilakukan di level Pydantic Model (otomatis oleh FastAPI)
+  - Logika solver dienkapsulasi di modul terpisah (hungarian_solver, cpm_solver)
+  - Error handling berlapis: input validation → ValueError → TypeError → Exception
+  - CORS dikonfigurasi agar frontend HTML/JS bisa memanggil API dari browser
+
+Dependensi:
+  - fastapi       : Framework REST API
+  - pydantic      : Validasi & parsing data request
+  - uvicorn       : ASGI server (jalankan dengan: uvicorn backend.main:app --reload)
+==============================================================================
+"""
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 
+# Import modul solver dari sub-paket backend
 from .cpm_solver import CPMSolver
 from .hungarian_solver import HungarianSolver
 
+# ── Inisialisasi Aplikasi FastAPI ─────────────────────────────────────────────
 app = FastAPI(
-    title="OptiPath API", 
+    title="OptiPath API",
     description="Backend API untuk Sistem Optimasi Riset Operasi (Hungarian & CPM)",
     version="2.0"
 )
 
-# Konfigurasi CORS (Cross-Origin Resource Sharing)
-# Mengizinkan frontend (HTML/JS) untuk mengakses API secara aman dari domain manapun.
+# ── Konfigurasi CORS (Cross-Origin Resource Sharing) ─────────────────────────
+# Diperlukan agar browser mengizinkan request dari frontend (HTML/JS)
+# yang berjalan di origin berbeda (misal: file:// atau localhost:3000)
+# ke API yang berjalan di localhost:8000.
+# PENTING: Di lingkungan produksi, ganti allow_origins=["*"] dengan
+# domain frontend yang spesifik untuk keamanan lebih baik.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Pada level produksi, ganti "*" dengan domain yang spesifik
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],       # Izinkan semua origin (development only)
+    allow_credentials=True,    # Izinkan pengiriman cookies/auth header
+    allow_methods=["*"],       # Izinkan semua HTTP method (GET, POST, dsb)
+    allow_headers=["*"],       # Izinkan semua HTTP header
 )
 
-# --- Skema Data (Pydantic Models) ---
-# Berfungsi untuk memvalidasi tipe data input (Error Handling) sebelum diproses oleh Solver.
-# Jika tipe data tidak sesuai (misal: string diisi ke field matrix float), FastAPI otomatis memblokir (HTTP 422).
+# ============================================================================
+# SKEMA DATA — PYDANTIC MODELS
+# ============================================================================
+# Pydantic models berfungsi sebagai "kontrak data" antara frontend dan backend.
+# FastAPI secara otomatis:
+#   1. Mem-parse body JSON request menjadi objek Python sesuai model
+#   2. Memvalidasi tipe data setiap field
+#   3. Mengembalikan HTTP 422 (atau 400 via handler kustom) jika validasi gagal
+#
+# Keuntungan: validasi input non-numerik (mis. huruf "A" pada field float)
+# langsung ditangani tanpa perlu kode validasi manual di setiap endpoint.
 
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+# ── Global Handler: Request Validation Error ──────────────────────────────────
+# Override respons default FastAPI (HTTP 422 Unprocessable Entity) menjadi
+# HTTP 400 Bad Request dengan pesan error yang ramah dalam Bahasa Indonesia.
+#
+# Kasus yang ditangani:
+#   - Pengguna memasukkan huruf "A" pada sel matriks (field List[List[float]])
+#   - Pengguna memasukkan simbol khusus atau teks pada field numerik
+#   - Body request tidak sesuai format JSON yang diharapkan
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    # Ekstrak informasi error pertama dari Pydantic untuk pesan yang lebih spesifik
+    errors      = exc.errors()
+    first_error = errors[0] if errors else {}
+
+    # Bangun string lokasi field bermasalah: misal "body → cost_matrix → 2 → 3"
+    loc = " → ".join(str(l) for l in first_error.get("loc", []))
+
+    # Susun pesan error yang informatif dan ramah pengguna
+    friendly_msg = (
+        f"Input tidak valid pada field '{loc}'. "
+        "Pastikan semua sel matriks berisi angka bulat atau desimal "
+        "(tidak boleh mengandung huruf, simbol, atau karakter khusus)."
+        if loc else
+        "Input tidak valid. Pastikan semua sel matriks berisi angka "
+        "(tidak mengandung huruf atau simbol khusus)."
+    )
+    return JSONResponse(
+        status_code=400,
+        content={"success": False, "detail": friendly_msg}
+    )
+
+
+# ── Model Request: Hungarian Algorithm ───────────────────────────────────────
 class HungarianRequest(BaseModel):
-    cost_matrix: List[List[float]]
-    is_maximization: bool = False
+    """
+    Schema validasi untuk request endpoint /api/solve/hungarian.
 
+    Fields:
+        cost_matrix    : Matriks biaya 2D berisi angka desimal.
+                         Contoh: [[10, 20], [30, 40]]
+                         Pydantic akan menolak otomatis jika ada elemen non-numerik.
+        is_maximization: False (default) → cari biaya minimum.
+                         True → cari keuntungan maksimum (solver mengonversi ke minimasi).
+    """
+    cost_matrix: List[List[float]]   # Matriks biaya N×M — harus berisi angka semua
+    is_maximization: bool = False     # Mode optimasi: False=minimasi, True=maksimasi
+
+
+# ── Model Request: CPM ───────────────────────────────────────────────────────
 class CPMActivity(BaseModel):
-    name: str
-    duration: float
-    predecessors: str | List[str]
+    """
+    Schema satu kegiatan CPM dalam request /api/solve/cpm.
+
+    Fields:
+        name        : Nama/deskripsi kegiatan (misal "Produksi Shooting Lapangan")
+        duration    : Durasi kegiatan dalam satuan hari (harus ≥ 0)
+        predecessors: Predecessor kegiatan ini.
+                      Bisa berupa string "A, B" atau list ["A", "B"].
+                      Nilai "-", "NONE", atau "" berarti tidak ada predecessor.
+    """
+    name:         str                # Nama deskriptif kegiatan
+    duration:     float              # Durasi dalam hari (float untuk fleksibilitas)
+    predecessors: str | List[str]    # Predecessor: string atau list string
+
 
 class CPMRequest(BaseModel):
-    activities: Dict[str, CPMActivity]
+    """
+    Schema validasi untuk request endpoint /api/solve/cpm.
 
-# --- Endpoints API ---
+    Fields:
+        activities: Dictionary kegiatan, di mana key adalah ID (misal "A", "B")
+                    dan value adalah objek CPMActivity.
+                    Contoh: {"A": {"name": "...", "duration": 5, "predecessors": "-"}}
+    """
+    activities: Dict[str, CPMActivity]   # Peta ID kegiatan → detail kegiatan
+
+
+# ============================================================================
+# ENDPOINTS API
+# ============================================================================
 
 @app.get("/")
 def read_root():
-    """Endpoint verifikasi status kesehatan server (Health Check)."""
+    """
+    Endpoint Health Check — verifikasi bahwa server API berjalan dengan normal.
+    Dipanggil oleh frontend saat halaman pertama kali dibuka untuk mengecek
+    status koneksi API (indikator hijau/merah di topbar).
+    """
     return {"message": "OptiPath API is running"}
+
 
 @app.post("/api/solve/hungarian")
 def solve_hungarian(req: HungarianRequest):
     """
-    Endpoint untuk Modul 1: Algoritma Hungarian.
-    Menerima matriks biaya 2D, memprosesnya melalui HungarianSolver, 
-    dan mengembalikan log langkah-langkah perhitungan secara transparan.
+    Endpoint Modul 1: Algoritma Hungarian (Assignment Problem).
+
+    Alur Pemrosesan:
+      1. Pydantic memvalidasi request body → field non-numerik langsung ditolak (HTTP 400)
+      2. HungarianSolver memproses matriks step-by-step:
+           a. Inisialisasi & padding matriks
+           b. Pengurangan baris & kolom
+           c. Loop: matching bipartit → garis penutup → revisi matriks
+           d. Penugasan akhir & total biaya
+      3. Konversi NumPy array → list Python native (agar JSON-serializable)
+      4. Kembalikan semua langkah + hasil penugasan ke frontend
+
+    Error Handling Berlapis:
+      - RequestValidationError → HTTP 400: nilai non-numerik dari Pydantic (handler global)
+      - ValueError             → HTTP 400: ukuran matriks di luar batas 8x8–20x20
+      - TypeError              → HTTP 400: tipe data tidak valid yang lolos dari Pydantic
+      - Exception              → HTTP 500: bug internal yang tidak terduga
     """
+    import numpy as np
     try:
-        # Panggil modul solver yang telah dienkapsulasi dengan bersih (Modular)
+        # ── Panggil HungarianSolver — solver dienkapsulasi terpisah (Modular) ──
         solver = HungarianSolver(req.cost_matrix, is_maximization=req.is_maximization)
         assignments, total_cost = solver.solve()
-        
-        # Format hasil langkah-langkah: Konversi dari NumPy Array ke List native Python
-        # (Untuk menjamin kompatibilitas format JSON dan efisiensi memori)
+
+        # ── Konversi langkah-langkah: NumPy Array → List Python native ──────
+        # FastAPI tidak bisa men-serialize NumPy ndarray secara langsung ke JSON.
+        # Setiap array harus dikonversi ke list Python dengan .tolist().
         formatted_steps = []
         for step in solver.steps:
             formatted_step = {
-                "title": step.get("title"),
+                "title":       step.get("title"),
                 "description": step.get("description"),
-                "matrix": step.get("matrix").tolist() if step.get("matrix") is not None else None,
+                # Konversi matriks NumPy ke nested list Python
+                "matrix":      step.get("matrix").tolist() if step.get("matrix") is not None else None,
             }
-            # Include other step properties if present
+            # Konversi properti tambahan (row_lines, col_mins, dsb) jika berupa ndarray
             for k, v in step.items():
                 if k not in ["title", "description", "matrix"]:
-                    import numpy as np
-                    if isinstance(v, np.ndarray):
-                        formatted_step[k] = v.tolist()
-                    else:
-                        formatted_step[k] = v
+                    formatted_step[k] = v.tolist() if isinstance(v, np.ndarray) else v
             formatted_steps.append(formatted_step)
 
+        # Kembalikan respons sukses dengan semua data yang dibutuhkan frontend
         return {
-            "success": True,
-            "assignments": assignments,
-            "total_cost": total_cost,
-            "steps": formatted_steps
+            "success":     True,
+            "assignments": assignments,    # List penugasan akhir { row, col, cost }
+            "total_cost":  total_cost,     # Total biaya/keuntungan optimal
+            "steps":       formatted_steps # Semua langkah untuk tampilan step-by-step
         }
+
+    except ValueError as ve:
+        # ValueError dari HungarianSolver: ukuran matriks tidak valid (di luar 8x8–20x20)
+        # atau konversi nilai gagal karena input tidak terduga.
+        raise HTTPException(status_code=400, detail=str(ve))
+
+    except TypeError as te:
+        # TypeError: nilai non-numerik yang lolos dari validasi Pydantic (sangat jarang).
+        # Mengembalikan pesan ramah daripada membiarkan crash jadi HTTP 500.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Tipe data tidak valid pada matriks. "
+                "Pastikan semua sel berisi angka (bukan huruf atau simbol). "
+                f"Detail teknis: {str(te)}"
+            )
+        )
+
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # Catch-all: hanya untuk bug internal yang tidak terduga (bukan kesalahan input).
+        # HTTP 500 menandakan masalah di sisi server, bukan sisi pengguna.
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 
 @app.post("/api/solve/cpm")
 def solve_cpm(req: CPMRequest):
     """
-    Endpoint untuk Modul 2: Critical Path Method (CPM).
-    Menerima list aktivitas, menghitung Forward/Backward Pass,
-    dan menghasilkan diagram jaringan (Vis.js / Graphviz Format).
+    Endpoint Modul 2: Critical Path Method (Teori Jaringan).
+
+    Alur Pemrosesan:
+      1. Pydantic memvalidasi request body → field tidak lengkap langsung ditolak
+      2. Transformasi Pydantic Model → dict Python standar (untuk CPMSolver)
+      3. CPMSolver memproses jaringan:
+           a. _parse_predecessors() → normalisasi format predecessor
+           b. _topological_sort()   → Kahn's Algorithm (deteksi siklus)
+           c. Forward Pass          → hitung ES, EF
+           d. Backward Pass         → hitung LF, LS
+           e. Slack + Kritis        → identifikasi jalur kritis
+           f. _find_all_critical_paths() → DFS enumerasi semua jalur kritis
+      4. generate_graphviz() → kode DOT untuk visualisasi jaringan
+      5. Kembalikan hasil lengkap ke frontend
+
+    Error Handling:
+      - ValueError  → HTTP 400: Circular Dependency terdeteksi, atau input tidak valid
+      - Exception   → HTTP 500: crash internal yang tidak terduga
     """
     try:
-        # Transformasi Pydantic model menjadi Dictionary standar agar tidak membebani memori
+        # ── Transformasi Pydantic Model → dict standar ──────────────────────
+        # CPMSolver menerima dict Python biasa, bukan objek Pydantic.
+        # Konversi dilakukan di sini agar CPMSolver tetap independen dari FastAPI.
         activities_data = {
-            k: {"name": v.name, "duration": v.duration, "predecessors": v.predecessors}
+            k: {
+                "name":         v.name,
+                "duration":     v.duration,
+                "predecessors": v.predecessors   # Bisa str atau list[str]
+            }
             for k, v in req.activities.items()
         }
-        
-        # Instansiasi objek CPMSolver
+
+        # ── Instansiasi dan jalankan CPMSolver ─────────────────────────────
         solver = CPMSolver(activities_data)
-        activities_result, total_duration = solver.solve()
+        activities_result, total_duration, critical_paths = solver.solve()
+
+        # ── Generate kode Graphviz DOT untuk visualisasi jaringan ──────────
         graphviz_dot = solver.generate_graphviz()
 
+        # Kembalikan semua hasil ke frontend
         return {
-            "success": True,
-            "activities": activities_result,
-            "total_duration": total_duration,
-            "graphviz_dot": graphviz_dot
+            "success":        True,
+            "activities":     activities_result,   # Dict semua kegiatan + nilai ES/EF/LS/LF/Slack
+            "total_duration": total_duration,      # Durasi total proyek (hari)
+            "critical_paths": critical_paths,      # Semua jalur kritis [ ['A','D','E'], ... ]
+            "graphviz_dot":   graphviz_dot         # Kode DOT untuk Graphviz (tidak digunakan Vis.js)
         }
+
     except ValueError as ve:
-        # Error penanganan khusus: misal siklus logika pada graf (Circular Dependency)
+        # ValueError dari CPMSolver: Circular Dependency, predecessor tidak valid, dsb.
+        # Pesan error dari solver sudah informatif dan ramah pengguna.
         raise HTTPException(status_code=400, detail=str(ve))
+
     except Exception as e:
-        # Catch-all exception untuk mencegah server down secara tiba-tiba akibat crash tidak terduga
+        # Catch-all: mencegah server crash total akibat bug internal yang tidak terduga.
+        # Di lingkungan produksi, log exception ini ke sistem monitoring.
         raise HTTPException(status_code=500, detail=str(e))
