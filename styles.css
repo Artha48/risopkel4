@@ -1,15 +1,58 @@
+/**
+ * ============================================================================
+ * styles.css
+ *
+ * CSS Utama untuk Aplikasi OptiPath (Sistem Optimasi Riset Operasi).
+ * Menggunakan arsitektur penamaan modular berbasis blok dan elemen untuk
+ * mempertahankan konsistensi antarmuka pengguna (Notion-style aesthetics).
+ *
+ * Struktur CSS ini dibagi menjadi blok-blok terpisah:
+ *  1. KEYFRAMES        — animasi fadeInUp dan spin
+ *  2. RESET / BASE     — Notion-style typography dan box model
+ *  3. SIDEBAR          — panel navigasi kiri (240px fixed)
+ *  4. MAIN BLOCK       — area konten utama (scrollable)
+ *  5. TOP APP BAR      — breadcrumb dan status API (sticky)
+ *  6. PAGE ICON        — emoji besar di atas judul halaman
+ *  7. MODULE HEADING   — H1 gaya Notion dengan subtitle
+ *  8. DIVIDER/SECTION  — pemisah konten horizontal
+ *  9. NOTION PROPS     — metadata halaman (Created by, Solver, dsb)
+ * 10. BUTTONS          — btn-primary, btn-ghost, btn-danger-ghost, spinner
+ * 11. FORM ELEMENTS    — input, select dengan focus ring biru
+ * 12. TABLES & MATRIX  — tabel data dan tabel matriks input
+ * 13. GRID LAYOUT      — grid 2-kolom responsif
+ * 14. RESULT BOXES     — kotak hasil (total cost, total duration)
+ * 15. STEP CARDS       — kartu langkah-langkah algoritma
+ * 16. MATRIX WRAPPER   — scroll container 20×20 dengan sticky header
+ * 17. DIRTY STATE      — highlight amber untuk sel yang diubah belum dikalkulasi
+ * 18. SOLVE BAR        — sticky bar tombol "Jalankan Optimasi"
+ * ============================================================================
+ */
+
+/* Impor font Inter dari Google Fonts (digunakan sebagai font primer tabel) */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-/* ── KEYFRAMES ───────────────────────────────────────────────────────────── */
+/* ── 1. KEYFRAMES ────────────────────────────────────────────────────────── */
+
+/**
+ * fadeInUp: digunakan pada .content-inner saat modul baru dirender.
+ * Memberikan efek "muncul dari bawah" yang halus (Notion-like page transition).
+ */
 @keyframes fadeInUp {
     from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
+    to   { opacity: 1; transform: translateY(0); }
 }
+
+/**
+ * spin: digunakan pada elemen .spinner di dalam tombol loading
+ * dan juga pada lingkaran spinner di loading overlay.
+ */
 @keyframes spin {
     100% { transform: rotate(360deg); }
 }
 
-/* ── RESET / BASE (NOTION STYLE) ─────────────────────────────────────────── */
+/* ── 2. RESET / BASE (NOTION STYLE) ─────────────────────────────────────── */
+
+/* Reset box-model global: semua elemen menggunakan border-box sizing */
 * {
     box-sizing: border-box;
     margin: 0;
@@ -17,25 +60,33 @@
 }
 
 body {
+    /* Font stack Notion: system-ui → fallback ke Segoe UI / Helvetica */
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
-    -webkit-font-smoothing: antialiased;
-    background: #FFFFFF; /* Pure White */
-    color: #37352F;      /* Notion Dark Gray */
-    font-size: 14px;     /* Base size */
+    -webkit-font-smoothing: antialiased; /* Anti-aliasing di WebKit/Safari */
+    background: #FFFFFF;  /* Latar belakang putih bersih ala Notion */
+    color: #37352F;        /* Warna teks utama Notion Dark Gray */
+    font-size: 14px;       /* Ukuran teks dasar */
     line-height: 1.5;
     height: 100vh;
-    overflow: hidden;
+    overflow: hidden;      /* Cegah scroll pada body; scroll ada di .main-content */
 }
 
+/* Layout utama: sidebar + konten, memenuhi seluruh viewport */
 .app-container {
     display: flex;
     height: 100vh;
     width: 100vw;
 }
 
-/* ── SIDEBAR ──────────────────────────────────────────────────────────────── */
+/* ── 3. SIDEBAR ──────────────────────────────────────────────────────────── */
+
+/**
+ * Panel navigasi kiri dengan lebar tetap 240px.
+ * Berisi logo aplikasi, label navigasi, dan item menu.
+ * z-index: 100 agar selalu di atas konten utama.
+ */
 .sidebar {
-    background: #F7F7F5; /* Notion Sidebar Gray */
+    background: #F7F7F5;  /* Notion Sidebar Gray — sedikit lebih gelap dari putih */
     border-right: 1px solid rgba(55, 53, 47, 0.09);
     width: 240px;
     display: flex;
@@ -43,10 +94,13 @@ body {
     z-index: 100;
 }
 
+/* Wrapper logo di bagian atas sidebar */
 .op-logo-wrap {
     display: flex; align-items: center; gap: 0.6rem;
     padding: 1rem 1rem 1.5rem;
 }
+
+/* Ikon logo: kotak hitam kecil berisi huruf "O" */
 .op-logo-icon {
     width: 24px; height: 24px;
     background: #37352F;
@@ -54,25 +108,29 @@ body {
     display: flex; align-items: center; justify-content: center;
     font-size: 0.8rem; flex-shrink: 0; color: #FFF; font-weight: 700;
 }
-.op-logo-name  { font-size: 14px; font-weight: 500; color: #37352F; }
-.op-logo-sub   { display: none; }
 
+.op-logo-name { font-size: 14px; font-weight: 500; color: #37352F; }
+.op-logo-sub  { display: none; } /* Sub-judul disembunyikan di tampilan desktop */
+
+/* Label grup navigasi (misal: "MENU") — teks kecil muted */
 .op-nav-label {
     font-size: 11px; font-weight: 600;
-    color: rgba(55, 53, 47, 0.5); /* Notion muted */
+    color: rgba(55, 53, 47, 0.5);
     display: block; padding: 1.5rem 1rem 0.3rem;
 }
 
+/* Container daftar item navigasi */
 .nav-links {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 1px;  /* Jarak minimal antar item */
 }
 
+/* Satu item menu navigasi (Dashboard, Hungarian, CPM) */
 .nav-item {
     padding: 0.3rem 0.8rem;
     margin: 0 0.5rem;
-    border-radius: 4px; /* Notion small radius */
+    border-radius: 4px;
     cursor: pointer;
     display: flex; align-items: center;
     font-size: 14px; font-weight: 500;
@@ -81,17 +139,22 @@ body {
     transition: background 0.1s ease;
 }
 
-.nav-item:hover {
-    background: rgba(55, 53, 47, 0.08); /* Notion hover gray */
-}
+/* Hover: latar abu Notion */
+.nav-item:hover  { background: rgba(55, 53, 47, 0.08); }
 
+/* State aktif: bold + latar abu Notion */
 .nav-item.active {
     background: rgba(55, 53, 47, 0.08);
     color: #37352F;
     font-weight: 600;
 }
 
-/* ── MAIN BLOCK ───────────────────────────────────────────────────────────── */
+/* ── 4. MAIN BLOCK ───────────────────────────────────────────────────────── */
+
+/**
+ * Area konten utama: mengisi sisa ruang (flex: 1), bisa di-scroll secara vertikal.
+ * padding-bottom memberikan ruang di bawah agar konten tidak tertutup sticky bar.
+ */
 .main-content {
     flex: 1;
     overflow-y: auto;
@@ -99,14 +162,24 @@ body {
     padding-bottom: 6rem;
 }
 
+/**
+ * Pembungkus inner konten: margin horizontal seperti "wide document" Notion.
+ * max-width 900px dengan margin auto memberikan tata letak yang terpusat.
+ * animation: fadeInUp diaktifkan tiap kali modul baru di-render.
+ */
 .content-inner {
-    padding: 0 5rem; /* Wide margins like Notion document */
-    max-width: 900px; /* Centered document width */
+    padding: 0 5rem;
+    max-width: 900px;
     margin: 0 auto;
     animation: fadeInUp 0.3s ease forwards;
 }
 
-/* ── TOP APP BAR ──────────────────────────────────────────────────────────── */
+/* ── 5. TOP APP BAR ──────────────────────────────────────────────────────── */
+
+/**
+ * Bar navigasi atas: sticky di atas saat scroll.
+ * Berisi breadcrumb modul aktif dan status koneksi API.
+ */
 .op-topbar {
     background: #FFFFFF;
     padding: 0.8rem 1.5rem;
@@ -114,10 +187,15 @@ body {
     position: sticky; top: 0; z-index: 50;
     margin-bottom: 2rem;
 }
-.op-topbar-title { font-size: 14px; color: rgba(55, 53, 47, 0.65); font-weight: 500; }
+.op-topbar-title         { font-size: 14px; color: rgba(55, 53, 47, 0.65); font-weight: 500; }
 .op-topbar span:last-child { font-size: 13px; font-weight: 500; color: rgba(55, 53, 47, 0.65); }
 
-/* ── PAGE ICON ───────────────────────────────────────────────────────────── */
+/* ── 6. PAGE ICON ─────────────────────────────────────────────────────────── */
+
+/**
+ * Emoji besar yang muncul di atas judul halaman modul (🏢 untuk Hungarian, 📈 untuk CPM).
+ * Memberikan identitas visual cepat ala Notion page icon.
+ */
 .page-icon {
     font-size: 5rem;
     line-height: 1;
@@ -125,56 +203,73 @@ body {
     margin-top: 1rem;
 }
 
-/* ── MODULE HEADING (Notion H1) ──────────────────────────────────────────── */
+/* ── 7. MODULE HEADING (Notion H1) ───────────────────────────────────────── */
+
+/* Wrapper heading halaman modul dengan padding atas */
 .op-module-wrap { padding: 2rem 0 1rem; }
+
+/* Judul utama halaman: font besar, bold, letter-spacing negatif ala Notion */
 .op-module-title {
     font-size: 2.5rem; font-weight: 700; color: #37352F;
     line-height: 1.2; margin: 0; letter-spacing: -0.02em;
 }
 .op-module-title span { color: rgba(55, 53, 47, 0.5); font-weight: 600; }
+
+/* Sub-judul halaman: font lebih kecil, warna muted */
 .op-module-sub {
     font-size: 1rem; color: rgba(55, 53, 47, 0.65);
     margin: 0.5rem 0 0; font-weight: 400; line-height: 1.6;
 }
 
-/* ── DIVIDER / NO CARDS ──────────────────────────────────────────────────── */
+/* ── 8. DIVIDER / SECTION ────────────────────────────────────────────────── */
+
+/* Pemisah horizontal tipis antara bagian konten — Notion-style horizontal rule */
 .notion-divider {
     border-bottom: 1px solid rgba(55, 53, 47, 0.09);
     margin: 2rem 0;
 }
 
-.notion-section {
-    margin-bottom: 2rem;
-}
+/* Pembungkus satu seksi konten dengan margin bawah */
+.notion-section { margin-bottom: 2rem; }
 
-.op-ch {
-    margin-bottom: 1rem;
-}
+/* Heading seksi (H2) dan sub-judul seksi */
+.op-ch          { margin-bottom: 1rem; }
 .op-ch-title    { font-size: 18px; font-weight: 600; color: #37352F; margin: 0; }
 .op-ch-subtitle { font-size: 14px; color: rgba(55, 53, 47, 0.65); margin: 0.2rem 0 0; }
 
-/* ── NOTION PROPERTIES ──────────────────────────────────────────────────── */
+/* ── 9. NOTION PROPERTIES ────────────────────────────────────────────────── */
+
+/**
+ * Blok metadata halaman bergaya Notion:
+ * "Created by: kelompok 4 risop", "Solver: Hungarian", dsb.
+ * Disusun secara vertikal dengan border bawah tipis.
+ */
 .notion-props {
     margin-bottom: 2rem;
-    border-bottom: 1px solid rgba(55,53,47,0.09);
+    border-bottom: 1px solid rgba(55, 53, 47, 0.09);
     padding-bottom: 1rem;
     display: flex; flex-direction: column; gap: 0.5rem;
 }
+/* Satu baris properti: label (140px) + nilai */
 .notion-prop-row {
     display: flex; align-items: center; gap: 1rem;
     font-size: 14px;
 }
+/* Label properti: teks muted dengan icon emoji di depan */
 .notion-prop-label {
-    width: 140px; color: rgba(55,53,47,0.6); display: flex; align-items: center; gap: 0.5rem;
+    width: 140px; color: rgba(55, 53, 47, 0.6); display: flex; align-items: center; gap: 0.5rem;
 }
-.notion-prop-val {
-    color: #37352F; display: flex; align-items: center; gap: 0.5rem;
-}
-.notion-badge {
-    background: rgba(55,53,47,0.08); padding: 2px 6px; border-radius: 4px;
-}
+/* Nilai properti */
+.notion-prop-val { color: #37352F; display: flex; align-items: center; gap: 0.5rem; }
+/* Badge kecil: latar abu bulat seperti tag Notion */
+.notion-badge { background: rgba(55, 53, 47, 0.08); padding: 2px 6px; border-radius: 4px; }
 
-/* ── BUTTONS & ACTIONS ──────────────────────────────────────────────────── */
+/* ── 10. BUTTONS & ACTIONS ───────────────────────────────────────────────── */
+
+/**
+ * Komponen tombol dasar: font inherit, border-radius 4px, transisi halus.
+ * Tiga varian tersedia: btn-primary (biru), btn-ghost (outline), btn-danger-ghost (merah outline).
+ */
 .btn {
     font-family: inherit;
     border-radius: 4px; font-weight: 500;
@@ -184,16 +279,19 @@ body {
     display: inline-flex; align-items: center; justify-content: center;
     border: 1px solid transparent; gap: 0.4rem;
 }
+/* Tombol disabled: opacity 50% + cursor tidak-boleh-klik */
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* Tombol primer (Notion Blue #2383E2): digunakan untuk aksi utama */
 .btn-primary {
-    background: #2383E2; /* Notion Blue */
+    background: #2383E2;
     color: #FFFFFF;
     font-weight: 500;
     width: auto;
 }
 .btn-primary:not(:disabled):hover { background: #1B71C8; }
 
+/* Tombol ghost: transparan dengan border tipis — aksi sekunder */
 .btn-ghost {
     background: transparent;
     color: #37352F;
@@ -201,29 +299,42 @@ body {
 }
 .btn-ghost:hover { background: rgba(55, 53, 47, 0.08); }
 
+/* Tombol danger-ghost: outline merah — aksi destruktif (hapus, reset) */
 .btn-danger-ghost {
     background: transparent;
-    color: #EB5757; /* Notion Red */
+    color: #EB5757;  /* Notion Red */
     border: 1px solid rgba(235, 87, 87, 0.2);
 }
 .btn-danger-ghost:hover { background: rgba(235, 87, 87, 0.1); }
 
+/**
+ * Spinner loading inline: lingkaran berputar di dalam tombol.
+ * Muncul saat request API sedang berjalan (display toggle via JS).
+ */
 .spinner {
     width: 14px; height: 14px;
-    border: 2px solid rgba(255,255,255,0.4);
+    border: 2px solid rgba(255, 255, 255, 0.4);
     border-radius: 50%;
-    border-top-color: #fff;
+    border-top-color: #fff;  /* Hanya segmen atas yang berwarna putih solid */
     animation: spin 0.8s linear infinite;
     display: inline-block;
 }
 
-/* ── FORM ELEMENTS ──────────────────────────────────────────────────────── */
+/* ── 11. FORM ELEMENTS ───────────────────────────────────────────────────── */
+
+/* Wrapper satu grup form: label + input dengan margin bawah */
 .form-group { margin-bottom: 1rem; }
 .form-group label {
     display: block;
     font-size: 12px; font-weight: 500; color: rgba(55, 53, 47, 0.65);
     margin-bottom: 0.4rem;
 }
+
+/**
+ * Input dan select standar:
+ * - Latar abu sangat terang untuk keadaan normal
+ * - Border biru + focus ring saat aktif
+ */
 .form-control {
     width: 100%;
     padding: 0.4rem 0.6rem;
@@ -231,52 +342,76 @@ body {
     border-radius: 4px;
     font-family: inherit;
     font-size: 14px; color: #37352F;
-    background: rgba(55,53,47,0.03); /* Notion slight gray input */
+    background: rgba(55, 53, 47, 0.03);  /* Notion slight gray input */
     transition: background 0.1s, box-shadow 0.1s;
 }
-.form-control:focus { 
-    outline: none; 
+/* State focus: border biru + glow ring transparan */
+.form-control:focus {
+    outline: none;
     background: #FFFFFF;
-    border-color: #2383E2; 
-    box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.2); 
+    border-color: #2383E2;
+    box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.2);
 }
+/* State invalid: border dan latar merah muda */
 .form-control.is-invalid { border-color: #EB5757; background: rgba(235, 87, 87, 0.05); }
 
-/* ── TABLES & MATRIX ────────────────────────────────────────────────────── */
+/* ── 12. TABLES & MATRIX ─────────────────────────────────────────────────── */
+
+/**
+ * Wrapper responsif untuk tabel: overflow-x auto agar bisa di-scroll horizontal
+ * pada layar kecil atau saat matriks sangat lebar (20 kolom).
+ */
 .table-responsive {
     width: 100%; overflow-x: auto;
     margin-bottom: 1.5rem;
 }
+
+/**
+ * Tabel utama (dipakai untuk matriks, tabel CPM, tabel hasil).
+ * Gaya Notion: border atas dan bawah tipis, tanpa border sel yang tebal.
+ */
 .matrix-table {
     width: 100%; border-collapse: collapse; border-spacing: 0;
     border-top: 1px solid rgba(55, 53, 47, 0.09);
     border-bottom: 1px solid rgba(55, 53, 47, 0.09);
 }
+/* Header tabel: teks kecil muted */
 .matrix-table th {
     padding: 0.6rem;
-    font-size: 0.85rem; color: rgba(55, 53, 47, 0.65); font-weight: 500; 
+    font-size: 0.85rem; color: rgba(55, 53, 47, 0.65); font-weight: 500;
     border-bottom: 1px solid rgba(55, 53, 47, 0.09);
     text-align: left;
 }
+/* Sel data tabel */
 .matrix-table td {
-    padding: 0.4rem 0.6rem; 
+    padding: 0.4rem 0.6rem;
     border-bottom: 1px solid rgba(55, 53, 47, 0.05);
 }
+/* Input di dalam sel tabel matriks: transparan, tanpa border default */
 .matrix-table input {
     width: 100%; padding: 0.4rem;
     border: 1px solid transparent; border-radius: 3px;
     font-family: 'Inter', sans-serif; font-size: 0.95rem; color: #37352F;
     background: transparent;
 }
-.matrix-table input:focus { border-color: rgba(55, 53, 47, 0.16); outline: none; background: #FFFFFF; }
+/* Fokus input: border abu tipis + latar putih */
+.matrix-table input:focus          { border-color: rgba(55, 53, 47, 0.16); outline: none; background: #FFFFFF; }
+/* Hover input (tidak sedang fokus): latar abu sangat tipis */
 .matrix-table input:hover:not(:focus) { background: rgba(55, 53, 47, 0.04); }
 
-/* Alignment Classes */
-.text-right { text-align: right !important; }
-.text-left { text-align: left !important; }
+/* Helper class untuk alignment teks */
+.text-right  { text-align: right !important; }
+.text-left   { text-align: left !important; }
 .text-center { text-align: center !important; }
 
-/* ── GRID LAYOUT ───────────────────────────────────────────────────────── */
+/* ── 13. GRID LAYOUT ─────────────────────────────────────────────────────── */
+
+/**
+ * Grid 2 kolom yang digunakan untuk:
+ * - Input dimensi matriks (baris/kolom)
+ * - Pilihan mode optimasi & metode input
+ * - Kotak hasil (total biaya + total durasi)
+ */
 .grid-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -284,13 +419,16 @@ body {
     align-items: start;
 }
 
-/* ── RESULT BOXES & BOARDS ────────────────────────────────────────────── */
+/* ── 14. RESULT BOXES & BOARDS ───────────────────────────────────────────── */
+
+/* Kolom board (tidak digunakan secara aktif, reserved untuk ekspansi) */
 .board-column {
     background: #F7F7F5;
     border-radius: 6px;
     padding: 1rem;
     margin-bottom: 1.5rem;
 }
+/* Kartu board individual */
 .board-card {
     background: #FFFFFF;
     border: 1px solid rgba(55, 53, 47, 0.09);
@@ -299,29 +437,175 @@ body {
     box-shadow: 0 1px 2px rgba(55, 53, 47, 0.05);
     margin-bottom: 0.5rem;
 }
-.board-card-title {
-    font-weight: 600; font-size: 14px; margin-bottom: 0.4rem;
-}
+.board-card-title { font-weight: 600; font-size: 14px; margin-bottom: 0.4rem; }
+
+/**
+ * Kotak hasil nilai optimal/total durasi:
+ * Border kiri tebal hitam (atau merah untuk jalur kritis).
+ * Digunakan di bagian hasil Hungarian dan CPM.
+ */
 .result-box {
-    background: rgba(55, 53, 47, 0.03); 
-    border-left: 3px solid #37352F; 
+    background: rgba(55, 53, 47, 0.03);
+    border-left: 3px solid #37352F;  /* Aksen border kiri tebal */
     border-radius: 0 4px 4px 0;
     padding: 1rem 1.5rem; margin-bottom: 1rem;
 }
+/* Label kecil di atas angka (uppercase, letter-spacing) */
 .result-label {
     font-size: 11px; font-weight: 600; text-transform: uppercase;
     letter-spacing: .05em; color: rgba(55, 53, 47, 0.65); margin-bottom: 0.2rem;
 }
-.result-value {
-    font-size: 24px; font-weight: 700; color: #37352F; line-height: 1.2;
+/* Angka besar di bawah label */
+.result-value { font-size: 24px; font-weight: 700; color: #37352F; line-height: 1.2; }
+
+/* ── 15. STEP CARDS ──────────────────────────────────────────────────────── */
+
+/**
+ * Kartu untuk setiap langkah algoritma (Hungarian dan CPM).
+ * Border kiri tipis abu menjadi penanda visual urutan langkah.
+ * Digunakan bersama class khusus via inline-style di JS untuk variasi warna.
+ */
+.step-card {
+    padding: 0.5rem 0 1rem 1rem;
+    border-left: 2px solid rgba(55, 53, 47, 0.16);
+    margin-bottom: 1.5rem;
+}
+/* Judul langkah: font semi-bold 15px */
+.step-title { font-weight: 600; color: #37352F; margin-bottom: 0.2rem; font-size: 15px; }
+/* Deskripsi langkah: font kecil muted, line-height lebar */
+.step-desc  { font-size: 14px; color: rgba(55, 53, 47, 0.65); margin-bottom: 0.8rem; line-height: 1.5; }
+
+/* ── 16. MATRIX WRAPPER: Scrollable 20×20 dengan sticky header ─────────── */
+
+/**
+ * Container scroll dua arah untuk tabel matriks input.
+ * max-height: 420px → cukup tampilkan ~6-8 baris tanpa scroll.
+ * Sticky header baris (th) dan kolom pertama (td:first-child) membuat
+ * label tetap terlihat saat scroll ke kanan atau ke bawah.
+ *
+ * Efek bayangan dalam (inner shadow) atas & bawah:
+ * Menggunakan teknik background-image overlay untuk mengindikasikan
+ * bahwa ada konten di luar viewport yang bisa di-scroll.
+ */
+.matrix-scroll-wrapper {
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid rgba(55, 53, 47, 0.12);
+    border-radius: 6px;
+    position: relative;
+    background: #fff;
+    /* Bayangan dalam atas & bawah sebagai indikator scroll */
+    background-image:
+        linear-gradient(white 30%, rgba(255,255,255,0)),
+        linear-gradient(rgba(255,255,255,0), white 70%),
+        radial-gradient(ellipse at top, rgba(55,53,47,0.08), transparent 60%),
+        radial-gradient(ellipse at bottom, rgba(55,53,47,0.08), transparent 60%);
+    background-attachment: local, local, scroll, scroll;
+    background-position: top, bottom, top, bottom;
+    background-repeat: no-repeat;
+    background-size: 100% 30px, 100% 30px, 100% 12px, 100% 12px;
 }
 
-.step-card {
-    padding: 0.5rem 0 1rem 1rem; border-left: 2px solid rgba(55, 53, 47, 0.16); margin-bottom: 1.5rem;
+/* Sticky kolom pertama (label baris: A1, A2, …) — menempel di kiri saat scroll horizontal */
+.matrix-scroll-wrapper .matrix-table td:first-child,
+.matrix-scroll-wrapper .matrix-table th:first-child {
+    position: sticky;
+    left: 0;
+    background: #F7F7F5;    /* Latar abu agar terpisah dari sel data */
+    z-index: 2;
+    border-right: 1px solid rgba(55, 53, 47, 0.1);
+    font-size: 0.75rem;
+    color: rgba(55, 53, 47, 0.55);
+    font-weight: 600;
+    text-align: center;
+    min-width: 36px;
+    padding: 0.3rem 0.4rem;
 }
-.step-title {
-    font-weight: 600; color: #37352F; margin-bottom: 0.2rem; font-size: 15px;
+
+/* Sticky baris header (K1, K2, …) — menempel di atas saat scroll vertikal */
+.matrix-scroll-wrapper .matrix-table thead th {
+    position: sticky;
+    top: 0;
+    background: #F7F7F5;
+    z-index: 3;             /* Lebih tinggi dari sticky kolom kiri */
+    border-bottom: 1px solid rgba(55, 53, 47, 0.12);
+    font-size: 0.75rem;
+    color: rgba(55, 53, 47, 0.55);
+    font-weight: 600;
+    text-align: center;
+    padding: 0.3rem 0.2rem;
+    min-width: 65px;
 }
-.step-desc {
-    font-size: 14px; color: rgba(55, 53, 47, 0.65); margin-bottom: 0.8rem; line-height: 1.5;
+
+/* Pojok kiri-atas (perpotongan header baris × header kolom): z-index tertinggi */
+.matrix-scroll-wrapper .matrix-table thead th:first-child {
+    z-index: 4;
+    background: #EFEFED;   /* Sedikit lebih gelap agar menonjol */
+}
+
+/* Sel body matriks: padding minimal agar banyak kolom muat di layar */
+.matrix-scroll-wrapper .matrix-table td {
+    padding: 0.1rem;
+    border-bottom: 1px solid rgba(55, 53, 47, 0.05);
+}
+
+/* ── 17. DIRTY STATE ─────────────────────────────────────────────────────── */
+
+/**
+ * Sel matriks yang telah diubah namun belum dikalkulasi ulang.
+ * Ditampilkan dengan latar amber (kuning keemasan) sebagai peringatan visual.
+ * Class .dirty ditambahkan oleh JS saat pengguna mengetik di sel matriks.
+ * Class dihapus setelah tombol "Jalankan Optimasi" berhasil dipanggil.
+ */
+.matrix-cell.dirty {
+    background: rgba(245, 158, 11, 0.08) !important;  /* Amber sangat transparan */
+    border-color: rgba(245, 158, 11, 0.35) !important;
+    color: #92400E !important;                          /* Teks amber gelap */
+    transition: background 0.15s, border-color 0.15s;
+}
+
+/**
+ * Banner peringatan di atas tabel:
+ * "Data matriks telah diubah — klik Jalankan Optimasi..."
+ * Disembunyikan secara default (display:none), muncul saat ada perubahan sel.
+ * Class .visible ditambahkan oleh JS via classList.add('visible').
+ */
+#matrix-dirty-banner {
+    display: none;               /* Default: tersembunyi */
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.9rem;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: #92400E;
+    margin-bottom: 0.6rem;
+    font-weight: 500;
+}
+/* Kelas .visible mengaktifkan display flex agar banner muncul */
+#matrix-dirty-banner.visible { display: flex; }
+
+/* ── 18. SOLVE BUTTON BAR ────────────────────────────────────────────────── */
+
+/**
+ * Bar bawah yang berisi tombol "Jalankan Optimasi" dan info ukuran matriks.
+ * Tidak lagi sticky (mengikuti scroll dokumen), namun tetap terlihat
+ * dengan latar semi-transparan dan border atas tipis.
+ */
+.solve-sticky-bar {
+    background: rgba(255, 255, 255, 0.92);
+    border-top: 1px solid rgba(55, 53, 47, 0.09);
+    padding: 0.75rem 0;
+    margin-top: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+/* Tombol "Jalankan Optimasi" di dalam sticky bar: lebih besar & ada box-shadow */
+.solve-sticky-bar .btn-primary {
+    padding: 0.55rem 1.4rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(35, 131, 226, 0.3);  /* Glow biru lembut */
 }
