@@ -1459,18 +1459,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         nodes.push({
                             id: id,
+                            // PENTING: vis.js mode 'html' TIDAK mendukung atribut style="..."
+                            // di dalam tag HTML. Hanya tag dasar seperti <b> dan <i> yang
+                            // diproses — inline CSS akan ditampilkan sebagai teks mentah.
+                            // Warna teks dikontrol via properti font.color dan font.bold.color.
                             label: isCrit
-                                ? `<b>⚡ ${id}</b>\n<i>${desc}</i>\n\nES: <b>${a.es}</b> | EF: <b>${a.ef}</b>\nLS: <b>${a.ls}</b> | LF: <b>${a.lf}</b>\n<b style="color:#DC2626">Slack: ${a.slack}</b>`
-                                : `<b>${id}</b>\n<i>${desc}</i>\n\nES: <b>${a.es}</b> | EF: <b>${a.ef}</b>\nLS: <b>${a.ls}</b> | LF: <b>${a.lf}</b>\nSlack: <b>${a.slack}</b>`,
+                                ? `<b>⚡ ${id}</b>\n<i>${desc}</i>\n\nES: <b>${a.es}</b>  |  EF: <b>${a.ef}</b>\nLS: <b>${a.ls}</b>  |  LF: <b>${a.lf}</b>\nSlack: <b>${a.slack}</b>`
+                                : `<b>${id}</b>\n<i>${desc}</i>\n\nES: <b>${a.es}</b>  |  EF: <b>${a.ef}</b>\nLS: <b>${a.ls}</b>  |  LF: <b>${a.lf}</b>\nSlack: <b>${a.slack}</b>`,
                             shape: 'box',
                             font: {
                                 multi: 'html',
                                 face: 'Inter, sans-serif',
+                                // Warna teks: merah gelap untuk kritis, biru gelap untuk normal
                                 color: isCrit ? '#7F1D1D' : '#1E3A8A',
-                                size: isCrit ? 15 : 13,
+                                size: 13,
                                 align: 'center',
-                                bold: { color: isCrit ? '#7F1D1D' : '#1E3A8A', size: isCrit ? 16 : 14 }
+                                // Bold juga mengikuti warna node (tidak perlu inline style)
+                                bold:   { color: isCrit ? '#991B1B' : '#1D4ED8', size: 14 },
+                                italic: { color: isCrit ? '#B91C1C' : '#2563EB', size: 12 }
                             },
+
                             color: {
                                 // Kritis: merah solid; Normal: biru muda
                                 background: isCrit ? '#FEE2E2' : '#EFF6FF',
@@ -1515,70 +1523,122 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     const netData = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
 
-                    // Layout adaptif: jarak antar level dan node disesuaikan jumlah node
+                    // ── Layout Adaptif Berdasarkan Jumlah Kegiatan ──────────────────────
+                    // Semakin banyak node, semakin rapat jarak antar level dan node.
+                    // Rumus berikut mencegah node overlapping pada kasus 15–20 kegiatan.
                     const nodeCount = Object.keys(actsVis).length;
-                    const levelSep  = nodeCount >= 15 ? 180 : nodeCount >= 10 ? 220 : 260;
-                    const nodeSpac  = nodeCount >= 15 ? 80  : nodeCount >= 10 ? 100 : 130;
-                    // Tinggi kontainer adaptif: lebih banyak node → lebih tinggi
-                    graphvizDiv.style.height = nodeCount >= 15 ? '680px' : nodeCount >= 10 ? '580px' : '480px';
+
+                    // levelSeparation : jarak horizontal antar level/rank
+                    // nodeSpacing     : jarak vertikal antar node dalam satu level
+                    // Keduanya diperkecil untuk 15–20 node agar muat di layar,
+                    // namun nodeDistance di physics tetap cukup besar untuk anti-overlap.
+                    const levelSep  = nodeCount >= 15 ? 200 : nodeCount >= 10 ? 240 : 280;
+                    const nodeSpac  = nodeCount >= 15 ? 90  : nodeCount >= 10 ? 110 : 140;
+
+                    // Tinggi kontainer adaptif: lebih banyak node → kontainer lebih tinggi
+                    graphvizDiv.style.height = nodeCount >= 15 ? '750px' : nodeCount >= 10 ? '620px' : '520px';
+
+                    // Jumlah iterasi stabilisasi: lebih banyak node butuh lebih banyak iterasi
+                    // agar physics bisa menyelesaikan anti-overlap sebelum dimatikan.
+                    const stabilizationIter = nodeCount >= 15 ? 500 : nodeCount >= 10 ? 350 : 200;
 
                     const options = {
                         layout: {
                             hierarchical: {
-                                enabled:             true,
-                                direction:           'LR', // Kiri ke kanan
-                                sortMethod:          'directed',
-                                levelSeparation:     levelSep,
-                                nodeSpacing:         nodeSpac,
-                                treeSpacing:         nodeSpac,
-                                blockShifting:       true,
-                                edgeMinimization:    true,
-                                parentCentralization: true,
-                                shakeTowards:        'leaves'
+                                enabled:              true,
+                                direction:            'LR',          // Left-to-Right layout
+                                sortMethod:           'directed',    // Urutan berdasarkan arah edge
+                                levelSeparation:      levelSep,      // Jarak horizontal antar rank
+                                nodeSpacing:          nodeSpac,      // Jarak vertikal antar node
+                                treeSpacing:          nodeSpac + 20, // Jarak antar sub-tree
+                                blockShifting:        true,          // Geser blok agar lebih rapi
+                                edgeMinimization:     true,          // Minimasi crossing edge
+                                parentCentralization: true,          // Pusatkan parent terhadap children
+                                shakeTowards:         'leaves'       // Optimasi arah ke leaf node
                             }
                         },
-                        nodes: { widthConstraint: { minimum: 100, maximum: 160 } },
-                        // Physics aktif hanya saat stabilisasi awal agar node tidak tumpang tindih
+                        nodes: {
+                            // Lebar node dibatasi agar tidak terlalu lebar/kecil
+                            widthConstraint: {
+                                minimum: nodeCount >= 15 ? 120 : 110,
+                                maximum: nodeCount >= 15 ? 165 : 180
+                            }
+                        },
                         physics: {
                             enabled: true,
-                            stabilization: { enabled: true, iterations: 250, updateInterval: 25, fit: true },
+                            stabilization: {
+                                enabled:        true,
+                                iterations:     stabilizationIter, // Iterasi lebih banyak untuk 15+ node
+                                updateInterval: 20,
+                                fit:            true               // Auto-fit setelah stabilisasi
+                            },
                             hierarchicalRepulsion: {
+                                // centralGravity = 0: tidak ada gaya tarik ke pusat
+                                // (diinginkan pada layout hierarkis LR)
                                 centralGravity:  0.0,
-                                springLength:    nodeSpac,
-                                springConstant:  0.01,
-                                nodeDistance:    nodeSpac + 20,
-                                damping:         0.09
+                                springLength:    nodeSpac + 10,        // Panjang "pegas" antar node terhubung
+                                springConstant:  0.01,                 // Kekuatan pegas — rendah agar tidak terlalu ketat
+                                // nodeDistance yang lebih besar untuk 15+ node
+                                // mencegah overlap ketika banyak node berada di level yang sama
+                                nodeDistance:    nodeCount >= 15 ? nodeSpac + 50 : nodeSpac + 30,
+                                damping:         0.15                  // Redaman — lebih tinggi agar cepat stabil
                             },
                             solver: 'hierarchicalRepulsion'
                         },
                         interaction: {
-                            dragNodes:    true,
-                            zoomView:     true,
-                            dragView:     true,
-                            hover:        true,
+                            dragNodes:    true,    // User dapat menarik node
+                            zoomView:     true,    // Scroll untuk zoom in/out
+                            dragView:     true,    // Drag kanvas
+                            hover:        true,    // Hover highlight
                             tooltipDelay: 200
                         }
                     };
 
                     const network = new vis.Network(graphvizDiv, netData, options);
 
-                    // Setelah stabilisasi: nonaktifkan physics & zoom fit agar diagram pas layar
+                    // ── Setelah Stabilisasi: Nonaktifkan Physics & Fit Diagram ──────────
+                    // Physics hanya aktif saat stabilisasi awal agar posisi node optimal.
+                    // Setelah selesai, physics dimatikan agar node tidak terus bergerak.
                     network.once('stabilizationIterationsDone', () => {
                         network.setOptions({ physics: { enabled: false } });
-                        network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+                        // Fit seluruh diagram ke dalam kontainer dengan animasi halus
+                        network.fit({ animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
                     });
-                    // Fallback: paksa fit setelah 1.5 detik jika event tidak terpanggil
+
+                    // Fallback: paksa fit setelah 2.5 detik jika event stabilization tidak terpanggil
+                    // (edge case: network sangat sederhana atau tidak ada edge sama sekali)
                     setTimeout(() => {
                         network.setOptions({ physics: { enabled: false } });
                         network.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } });
-                    }, 1500);
+                    }, 2500);
                 } else {
                     graphvizDiv.innerText = "Library Vis.js tidak dimuat. Refresh halaman jika koneksi internet terputus.";
                 }
                 
             } else {
-                // Backend mengembalikan error (mis. siklus dependensi / input tidak valid)
-                alert('Error: ' + data.detail);
+                // ── Backend mengembalikan error (mis. Circular Dependency / batasan jumlah kegiatan) ──
+                // Tampilkan pesan error secara inline di atas kontainer CPM (lebih baik dari alert).
+                const errDetail = data.detail || 'Terjadi kesalahan tidak diketahui.';
+                const existingErr = document.getElementById('cpm-error-banner');
+                if (existingErr) existingErr.remove(); // Hapus error lama jika ada
+
+                const errBanner = document.createElement('div');
+                errBanner.id = 'cpm-error-banner';
+                errBanner.style.cssText = [
+                    'background:#FEF2F2', 'border:1px solid #FECACA',
+                    'border-left:4px solid #EF4444', 'border-radius:4px',
+                    'padding:0.9rem 1.2rem', 'margin-bottom:1.5rem',
+                    'font-size:0.875rem', 'color:#991B1B', 'line-height:1.6'
+                ].join(';');
+                errBanner.innerHTML = `<strong>⛔ Error dari Server:</strong><br>${errDetail}`;
+
+                // Sisipkan banner error di atas tombol solve bar
+                const solveBar = document.querySelector('.solve-sticky-bar');
+                if (solveBar) solveBar.insertAdjacentElement('beforebegin', errBanner);
+                else document.getElementById('module-container').prepend(errBanner);
+
+                // Scroll ke banner error agar user langsung melihatnya
+                errBanner.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         } catch (e) {
             // Gagal terhubung ke server
