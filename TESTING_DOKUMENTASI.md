@@ -4,6 +4,10 @@
 
 Dokumen ini memuat skenario pengujian (Test Cases) yang digunakan untuk memverifikasi fungsionalitas, logika bisnis, dan penanganan kesalahan (Error Handling) dari aplikasi OptiPath.
 
+**Catatan Arsitektur:** Setiap validasi dilakukan di **dua lapis**:
+- 🟦 **Frontend** — Mencegat input sebelum request dikirim ke server (UX cepat)
+- 🟧 **Backend API** — Memvalidasi ulang setiap request (integritas data, tidak bisa di-bypass)
+
 ---
 
 ## 🏗️ Modul 1: Metode Penugasan (Hungarian Algorithm)
@@ -11,6 +15,7 @@ Dokumen ini memuat skenario pengujian (Test Cases) yang digunakan untuk memverif
 ### Skenario 1.1: Validasi Batas Ukuran Matriks
 - **Langkah Pengujian:** Mengubah input "Jumlah Baris" atau "Jumlah Kolom" menjadi nilai di bawah 8 atau di atas 20.
 - **Hasil yang Diharapkan:** Aplikasi menampilkan pesan error bahwa dimensi minimal adalah 8×8 dan maksimal 20×20, lalu menolak membuat tabel.
+- **Validasi:** 🟦 Frontend (`solveHungarian()`) + 🟧 Backend (`HungarianSolver.__init__` melempar `ValueError`)
 - **Status:** ✅ LULUS (*PASS*)
 
 ### Skenario 1.2: Fungsionalitas Pengisian Otomatis (Random)
@@ -31,13 +36,32 @@ Dokumen ini memuat skenario pengujian (Test Cases) yang digunakan untuk memverif
   3. Total Biaya / Keuntungan Optimal dihitung dan ditampilkan di atas tabel dengan benar.
 - **Status:** ✅ LULUS (*PASS*)
 
+### Skenario 1.5: Validasi Input Non-Numerik (Backend Defense)
+- **Langkah Pengujian:** Mengirim request langsung ke `POST /api/solve/hungarian` via Postman/curl dengan `cost_matrix` yang mengandung nilai string (mis. `[["A", 20], [30, 40]]`).
+- **Hasil yang Diharapkan:** Backend mengembalikan **HTTP 400** (bukan 500) dengan pesan JSON: `"Input tidak valid pada field 'body → cost_matrix → 0 → 0'. Pastikan semua sel berisi angka..."`.
+- **Lapisan Validasi:** 🟧 Backend (Pydantic `RequestValidationError` handler → JSONResponse 400)
+- **Status:** ✅ LULUS (*PASS*)
+
 ---
 
 ## 🕸️ Modul 2: Teori Jaringan (Critical Path Method — CPM)
 
-### Skenario 2.1: Validasi Batas Kapasitas Kegiatan
+### Skenario 2.1: Validasi Batas Kapasitas Kegiatan — Frontend
 - **Langkah Pengujian:** Menghapus baris hingga tersisa 7 kegiatan, lalu menekan "Hitung Jalur Kritis". Kemudian mencoba menambahkan lebih dari 20 kegiatan.
 - **Hasil yang Diharapkan:** Aplikasi memberikan peringatan *Alert* dan tidak mengizinkan kalkulasi berjalan saat jumlah kegiatan di luar rentang 8 hingga 20.
+- **Lapisan Validasi:** 🟦 Frontend (`solveCpm()` baris validasi `actCount < 8 || actCount > 20`)
+- **Status:** ✅ LULUS (*PASS*)
+
+### Skenario 2.1b: Validasi Batas Kapasitas Kegiatan — Backend (Defense in Depth)
+- **Langkah Pengujian:** Mengirim request langsung ke `POST /api/solve/cpm` via Postman dengan `activities` hanya berisi 5 kegiatan (membypass frontend).
+- **Hasil yang Diharapkan:** Backend mengembalikan **HTTP 400** dengan pesan: `"Jumlah kegiatan terlalu sedikit: 5. Sistem membutuhkan minimal 8 kegiatan..."`.
+- **Lapisan Validasi:** 🟧 Backend (`solve_cpm()` — validasi `num_activities < 8`)
+- **Status:** ✅ LULUS (*PASS*)
+
+### Skenario 2.1c: Validasi Durasi Negatif — Backend
+- **Langkah Pengujian:** Mengirim request ke `POST /api/solve/cpm` dengan salah satu kegiatan memiliki `"duration": -5`.
+- **Hasil yang Diharapkan:** Backend mengembalikan **HTTP 400** dengan pesan: `"Durasi kegiatan 'A' bernilai negatif (-5.0)..."`.
+- **Lapisan Validasi:** 🟧 Backend (`solve_cpm()` — loop validasi durasi negatif)
 - **Status:** ✅ LULUS (*PASS*)
 
 ### Skenario 2.2: Pencegahan Input ID Ganda (Real-Time Validation)
@@ -70,9 +94,15 @@ Dokumen ini memuat skenario pengujian (Test Cases) yang digunakan untuk memverif
   5. **Langkah 5** — Tabel rekap lengkap dengan kolom Status (⚡ Kritis / Normal).
 - **Status:** ✅ LULUS (*PASS*)
 
-### Skenario 2.7: Visualisasi Interaktif Network Diagram
-- **Langkah Pengujian:** Memeriksa area bawah hasil kalkulasi CPM. Melakukan *Zoom in/out* dan menggeser (*drag*) salah satu lingkaran node kegiatan.
-- **Hasil yang Diharapkan:** Diagram vis.js berhasil dirender secara dinamis. Garis panah menunjukkan urutan *Predecessor* dengan benar. Node yang berada pada Jalur Kritis diwarnai merah mencolok. Diagram bersifat interaktif (bisa ditarik dan di-*zoom*).
+### Skenario 2.7: Visualisasi Interaktif Network Diagram (Anti-Overlap 20 Node)
+- **Langkah Pengujian:** Menginput 20 kegiatan (kapasitas maksimum), lalu menjalankan kalkulasi. Memeriksa diagram vis.js untuk tumpang tindih node (*overlapping*).
+- **Hasil yang Diharapkan:** Diagram berhasil dirender tanpa node yang tumpang tindih. Vis.js menggunakan layout `hierarchical LR` dengan `hierarchicalRepulsion` physics, `nodeDistance` adaptif (+50px untuk ≥15 node), dan `stabilizationIterations = 500` untuk memastikan semua node terposisi optimal. Garis kritis berwarna merah, node dapat ditarik dan di-zoom.
+- **Status:** ✅ LULUS (*PASS*)
+
+### Skenario 2.8: Anti-Circular Dependency (Ketergantungan Melingkar)
+- **Langkah Pengujian:** Mengatur predecessor sedemikian rupa sehingga terjadi siklus (contoh: Kegiatan A predecessornya B, dan Kegiatan B predecessornya A).
+- **Hasil yang Diharapkan:** Backend mendeteksi siklus melalui Kahn's Algorithm (topological sort), mengembalikan HTTP 400 dengan pesan yang menyebutkan nama kegiatan yang terlibat dalam siklus. Frontend menampilkan banner error merah inline (bukan `alert()`) dengan pesan yang ramah.
+- **Lapisan Validasi:** 🟧 Backend (`CPMSolver._topological_sort()` → `ValueError` → HTTP 400)
 - **Status:** ✅ LULUS (*PASS*)
 
 ---
