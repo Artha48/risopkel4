@@ -1,3 +1,23 @@
+/**
+ * ============================================================================
+ * script.js
+ * 
+ * Logika Utama Frontend untuk Aplikasi OptiPath.
+ * Mengontrol rendering modul (SPA), komunikasi API (Fetch), serta
+ * validasi input pengguna secara dinamis.
+ * 
+ * Modul Utama:
+ * 1. Metode Penugasan (Hungarian Algorithm):
+ *    - Setup matriks dinamis (8x8 hingga 20x20)
+ *    - Navigasi keyboard antar sel matriks
+ *    - Validasi "dirty state" dan tipe data numerik
+ *    - Rendering langkah-langkah visual termasuk garis penutup
+ * 2. Teori Jaringan (CPM):
+ *    - Input aktivitas dinamis
+ *    - Pengolahan Forward/Backward Pass melalui API
+ *    - Visualisasi graf interaktif menggunakan library Vis.js
+ * ============================================================================
+ */
 const API_URL = 'http://127.0.0.1:8000';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -65,11 +85,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderHungarian() {
         setActiveNav(navHungarian);
-        document.getElementById('topbar-breadcrumb').innerText = 'Assignment Model';
+        document.getElementById('topbar-breadcrumb').innerText = 'Metode Penugasan';
         container.innerHTML = `
             <div class="op-module-wrap">
                 <div class="page-icon">🏢</div>
-                <h1 class="op-module-title">Assignment Model</h1>
+                <h1 class="op-module-title">Metode Penugasan</h1>
                 <p class="op-module-sub" style="margin-bottom: 2rem;">Algoritma Hungarian — Optimasi penugasan agen ke lokasi UMKM.</p>
                 
                 <div class="notion-props">
@@ -120,12 +140,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <button class="btn btn-ghost" id="btn-generate" style="margin-bottom: 1.5rem; width: 100%;">Ganti Ukuran / Reset Matriks</button>
                     
-                    <div class="table-responsive" id="matrix-container" style="margin-top: 1rem;"></div>
+                    <!-- Dirty-state banner: muncul saat data diubah belum dihitung ulang -->
+                    <div id="matrix-dirty-banner">
+                        ✏️ Data matriks telah diubah &mdash; klik <strong>Jalankan Optimasi</strong> untuk memperbarui hasil.
+                    </div>
+
+                    <div class="matrix-scroll-wrapper" id="matrix-container" style="margin-top: 0.5rem;"></div>
                     
-                    <button class="btn btn-primary" id="btn-solve" style="margin-top: 1.5rem;">
-                        <span class="spinner" id="btn-solve-spinner" style="display:none;"></span> 
-                        <span id="btn-solve-text">Jalankan Optimasi</span>
-                    </button>
+                    <!-- Sticky solve bar agar tombol selalu terlihat saat scroll matriks besar -->
+                    <div class="solve-sticky-bar">
+                        <button class="btn btn-primary" id="btn-solve">
+                            <span class="spinner" id="btn-solve-spinner" style="display:none;"></span> 
+                            <span id="btn-solve-text">Jalankan Optimasi</span>
+                        </button>
+                        <span id="matrix-size-info" style="font-size:0.8rem; color:rgba(55,53,47,0.45);">8 × 8 = 64 sel</span>
+                    </div>
                 </div>
                 
                 <!-- Hasil Kalkulasi -->
@@ -150,10 +179,47 @@ document.addEventListener('DOMContentLoaded', () => {
         setupMatrix(8, 8, true);
 
         document.getElementById('btn-generate').addEventListener('click', () => {
-            const r = parseInt(document.getElementById('matrix-rows').value) || 8;
-            const c = parseInt(document.getElementById('matrix-cols').value) || 8;
+            const rowInput = document.getElementById('matrix-rows');
+            const colInput = document.getElementById('matrix-cols');
+            const r = parseInt(rowInput.value) || 0;
+            const c = parseInt(colInput.value) || 0;
+            
+            let hasError = false;
+            
+            if (r < 8 || r > 20) {
+                rowInput.style.borderColor = '#EF4444';
+                rowInput.style.backgroundColor = '#FEF2F2';
+                hasError = true;
+            } else {
+                rowInput.style.borderColor = '';
+                rowInput.style.backgroundColor = '';
+            }
+            
+            if (c < 8 || c > 20) {
+                colInput.style.borderColor = '#EF4444';
+                colInput.style.backgroundColor = '#FEF2F2';
+                hasError = true;
+            } else {
+                colInput.style.borderColor = '';
+                colInput.style.backgroundColor = '';
+            }
+            
+            if (hasError) {
+                alert("Gagal: Dimensi minimal adalah 8x8 dan maksimal 20x20. Silakan perbaiki ukuran yang berwarna merah.");
+                return;
+            }
+
             const isRandom = document.getElementById('input-method').value === 'random';
             setupMatrix(r, c, isRandom);
+        });
+
+        document.getElementById('matrix-rows').addEventListener('input', function() {
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
+        });
+        document.getElementById('matrix-cols').addEventListener('input', function() {
+            this.style.borderColor = '';
+            this.style.backgroundColor = '';
         });
 
         // Add input validation feedback
@@ -162,9 +228,136 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('results-container').style.display = 'none';
         });
 
-        // Sembunyikan hasil jika tabel matriks diubah
-        document.getElementById('matrix-container').addEventListener('input', () => {
+        document.getElementById('input-method').addEventListener('change', function() {
             document.getElementById('results-container').style.display = 'none';
+        });
+
+        // ── Dirty-state: tandai sel amber + tampilkan banner saat data diubah ──
+        document.getElementById('matrix-container').addEventListener('input', (e) => {
+            document.getElementById('results-container').style.display = 'none';
+            if (e.target.classList.contains('matrix-cell')) {
+                const raw = e.target.value.trim();
+                const isInvalid = raw !== '' && (isNaN(Number(raw)) || e.target.validity.badInput);
+                if (isInvalid) {
+                    e.target.style.borderColor = '#EF4444';
+                    e.target.style.backgroundColor = '#FEF2F2';
+                    e.target.title = '⚠ Input harus berupa angka';
+                    e.target.classList.remove('dirty');
+                } else {
+                    e.target.style.borderColor = '';
+                    e.target.style.backgroundColor = '';
+                    e.target.title = '';
+                    // Tandai sel sebagai dirty (warna amber) jika valid tapi belum dikalkulasi
+                    e.target.classList.add('dirty');
+                }
+                // Tampilkan dirty banner
+                const banner = document.getElementById('matrix-dirty-banner');
+                if (banner) banner.classList.add('visible');
+            }
+        });
+
+        // ── Keyboard Navigation ──
+        document.getElementById('matrix-container').addEventListener('keydown', (e) => {
+            if (!e.target.classList.contains('matrix-cell')) return;
+            const r = parseInt(e.target.dataset.row);
+            const colIdx = parseInt(e.target.dataset.col);
+            const totalCols = parseInt(e.target.dataset.cols);
+            const totalRows = parseInt(e.target.dataset.rows);
+
+            let nextR = r, nextC = colIdx;
+            if (e.key === 'ArrowRight' || (e.key === 'Enter' && !e.shiftKey)) {
+                nextC = colIdx + 1;
+                if (nextC >= totalCols) { nextC = 0; nextR = r + 1; }
+            } else if (e.key === 'ArrowLeft') {
+                nextC = colIdx - 1;
+                if (nextC < 0) { nextC = totalCols - 1; nextR = r - 1; }
+            } else if (e.key === 'ArrowDown') {
+                nextR = r + 1;
+            } else if (e.key === 'ArrowUp') {
+                nextR = r - 1;
+            } else if (e.key === 'Tab') {
+                return; // biarkan tab default berfungsi
+            } else {
+                return;
+            }
+
+            e.preventDefault();
+            if (nextR < 0 || nextR >= totalRows || nextC < 0 || nextC >= totalCols) return;
+            const next = document.querySelector(`.matrix-cell[data-row="${nextR}"][data-col="${nextC}"]`);
+            if (next) { next.focus(); next.select(); }
+        });
+
+        // ── Excel-like Bulk Paste Navigation ──
+        document.getElementById('matrix-container').addEventListener('paste', (e) => {
+            if (!e.target.classList.contains('matrix-cell')) return;
+            e.preventDefault();
+            
+            const pasteData = (e.clipboardData || window.clipboardData).getData('text');
+            if (!pasteData) return;
+
+            const startRow = parseInt(e.target.dataset.row);
+            const startCol = parseInt(e.target.dataset.col);
+            let currentRows = parseInt(e.target.dataset.rows);
+            let currentCols = parseInt(e.target.dataset.cols);
+
+            // Parsing teks dari Excel (dipisah baris oleh newline, kolom oleh tab)
+            const pasteLines = pasteData.trim().split(/\r?\n/);
+            const pastedRows = pasteLines.length;
+            const pastedCols = Math.max(...pasteLines.map(r => r.split('\t').length));
+
+            const reqRows = Math.min(20, startRow + pastedRows);
+            const reqCols = Math.min(20, startCol + pastedCols);
+
+            if (reqRows > currentRows || reqCols > currentCols) {
+                // Auto-expand matriks tanpa menghapus data yang sudah ada
+                const finalRows = Math.max(currentRows, reqRows);
+                const finalCols = Math.max(currentCols, reqCols);
+                
+                // Simpan data lama
+                let oldData = [];
+                for(let i=0; i<currentRows; i++) {
+                    let rowData = [];
+                    for(let j=0; j<currentCols; j++) {
+                        const input = document.querySelector(`.matrix-cell[data-row="${i}"][data-col="${j}"]`);
+                        rowData.push(input ? input.value : '');
+                    }
+                    oldData.push(rowData);
+                }
+                
+                // Render ulang matriks dengan ukuran baru
+                setupMatrix(finalRows, finalCols, false);
+                
+                // Kembalikan data lama
+                for(let i=0; i<currentRows; i++) {
+                    for(let j=0; j<currentCols; j++) {
+                        const input = document.querySelector(`.matrix-cell[data-row="${i}"][data-col="${j}"]`);
+                        if (input && oldData[i][j] !== '') {
+                            input.value = oldData[i][j];
+                        }
+                    }
+                }
+                
+                currentRows = finalRows;
+                currentCols = finalCols;
+            }
+
+            for (let i = 0; i < pasteLines.length; i++) {
+                const targetRow = startRow + i;
+                if (targetRow >= currentRows) break; // Jangan lebihi batas matriks (maks 20)
+
+                const cells = pasteLines[i].split('\t');
+                for (let j = 0; j < cells.length; j++) {
+                    const targetCol = startCol + j;
+                    if (targetCol >= currentCols) break;
+
+                    const cellInput = document.querySelector(`.matrix-cell[data-row="${targetRow}"][data-col="${targetCol}"]`);
+                    if (cellInput) {
+                        cellInput.value = cells[j].trim();
+                        // Trigger event 'input' agar logika validasi & dirty-state berjalan otomatis
+                        cellInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                }
+            }
         });
 
         document.getElementById('btn-solve').addEventListener('click', solveHungarian);
@@ -178,24 +371,49 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('matrix-rows').value = rows;
         document.getElementById('matrix-cols').value = cols;
 
+        // Update ukuran info di sticky bar
+        const sizeInfo = document.getElementById('matrix-size-info');
+        if (sizeInfo) sizeInfo.textContent = `${rows} × ${cols} = ${rows * cols} sel`;
+
         const c = document.getElementById('matrix-container');
-        let html = '<table class="matrix-table" style="table-layout: fixed; width: max-content;">';
-        for(let i=0; i<rows; i++) {
-            html += '<tr>';
-            for(let j=0; j<cols; j++) {
+
+        // Build table dengan sticky row/col header untuk navigasi 20×20
+        let html = '<table class="matrix-table" style="table-layout: fixed; width: max-content; border-collapse: collapse;">';
+        
+        // Baris header kolom (sticky top)
+        html += '<thead><tr><th style="min-width:36px;">&nbsp;</th>';
+        for (let j = 0; j < cols; j++) {
+            html += `<th>K${j + 1}</th>`;
+        }
+        html += '</tr></thead><tbody>';
+
+        for (let i = 0; i < rows; i++) {
+            html += `<tr><td>A${i + 1}</td>`; // sticky row label
+            for (let j = 0; j < cols; j++) {
                 const val = isRandom ? (Math.floor(Math.random() * 90) + 10) : '';
-                // Right aligned for numeric input readability
-                html += `<td><input type="number" class="matrix-cell text-right" style="width: 65px;" data-row="${i}" data-col="${j}" value="${val}"></td>`;
+                html += `<td><input type="number" class="matrix-cell text-right" style="width:60px; min-width:60px;" data-row="${i}" data-col="${j}" data-cols="${cols}" data-rows="${rows}" value="${val}" tabindex="0" autocomplete="off"></td>`;
             }
             html += '</tr>';
         }
-        html += '</table>';
+        html += '</tbody></table>';
         c.innerHTML = html;
+
+        // Reset dirty banner
+        const banner = document.getElementById('matrix-dirty-banner');
+        if (banner) banner.classList.remove('visible');
+        // Hapus semua dirty class
+        c.querySelectorAll('.matrix-cell.dirty').forEach(el => el.classList.remove('dirty'));
     }
 
     async function solveHungarian() {
         const rows = parseInt(document.getElementById('matrix-rows').value);
         const cols = parseInt(document.getElementById('matrix-cols').value);
+        
+        if (rows < 8 || rows > 20 || cols < 8 || cols > 20) {
+            alert(`Gagal: Ukuran matriks harus minimal 8x8 dan maksimal 20x20. Saat ini input: ${rows}x${cols}.`);
+            return;
+        }
+
         const modeSelect = document.getElementById('opt-mode');
         const mode = modeSelect.value;
         const btn = document.getElementById('btn-solve');
@@ -205,6 +423,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!mode) {
             modeSelect.classList.add('is-invalid'); // Visual error indication
             modeSelect.focus();
+            alert('Gagal: Jenis Optimasi (Minimasi/Maksimasi) belum dipilih. Harap pilih salah satu untuk melanjutkan.');
             return;
         }
 
@@ -215,8 +434,18 @@ document.addEventListener('DOMContentLoaded', () => {
             let row = [];
             for(let j=0; j<cols; j++) {
                 const input = document.querySelector(`.matrix-cell[data-row="${i}"][data-col="${j}"]`);
-                if (input.value.trim() === '') hasEmpty = true;
-                row.push(parseFloat(input.value) || 0);
+                if (!input) {
+                    alert('Gagal: Tabel matriks di layar tidak sinkron dengan ukuran input. Silakan klik "Ganti Ukuran / Reset Matriks" terlebih dahulu.');
+                    return;
+                }
+                const valRaw = input.value.trim();
+                if (valRaw === '') {
+                    hasEmpty = true;
+                } else if (input.validity.badInput || isNaN(Number(valRaw))) {
+                    alert('Gagal: Input harus berupa angka. Ditemukan karakter tidak valid pada matriks.');
+                    return;
+                }
+                row.push(parseFloat(valRaw) || 0);
             }
             matrix.push(row);
         }
@@ -226,10 +455,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Loading State
+        // Cek apakah ada sel yang masih merah (non-angka) sebelum kirim
+        const invalidCells = document.querySelectorAll('.matrix-cell[style*="#EF4444"]');
+        if (invalidCells.length > 0) {
+            alert('Gagal: Terdapat sel yang berisi karakter non-angka (ditandai merah). Harap perbaiki terlebih dahulu.');
+            return;
+        }
+
+        // Loading State — tombol + overlay
         btn.disabled = true;
         spinner.style.display = 'inline-block';
         btnText.innerText = "Memproses...";
+        showLoadingOverlay('Sedang menghitung optimasi penugasan…');
 
         try {
             const res = await fetch(`${API_URL}/api/solve/hungarian`, {
@@ -242,7 +479,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await res.json();
             
-            if(data.success) {
+        // Selesai kalkulasi: hapus semua dirty state
+        document.querySelectorAll('.matrix-cell.dirty').forEach(el => el.classList.remove('dirty'));
+        const banner = document.getElementById('matrix-dirty-banner');
+        if (banner) banner.classList.remove('visible');
+
+        if(data.success) {
                 document.getElementById('res-total').innerText = "Rp " + (data.total_cost * 10000).toLocaleString('id-ID');
                 
                 document.getElementById('results-container').style.display = 'block';
@@ -257,16 +499,95 @@ document.addEventListener('DOMContentLoaded', () => {
                         <p class="step-desc">${step.description}</p>
                     `;
                     if (step.matrix) {
-                        stepsHtml += '<div class="table-responsive"><table class="matrix-table" style="font-size: 0.8rem; text-align: right;">';
-                        step.matrix.forEach(r => {
-                            stepsHtml += '<tr>';
-                            r.forEach(val => {
-                                const isZero = Math.abs(val) < 1e-9;
-                                stepsHtml += `<td style="padding: 0.4rem 0.6rem; ${isZero ? 'color: #EF4444; font-weight: bold; background: #FEF2F2;' : 'color: #334155;'}">${Math.round(val)}</td>`;
+                        const hasLines = step.row_lines || step.col_lines;
+                        const rl = step.row_lines || [];
+                        const cl = step.col_lines || [];
+                        const N = step.matrix.length;
+
+                        // Jumlah garis & statistik untuk caption
+                        const lineCount = (rl.filter(Boolean).length) + (cl.filter(Boolean).length);
+                        const lineCaption = hasLines
+                            ? `<div style="font-size:0.78rem; margin-bottom:0.5rem; color:rgba(55,53,47,0.6);">
+                                <span style="display:inline-flex;align-items:center;gap:0.3rem;">
+                                  <span style="width:20px;height:3px;background:#3B82F6;display:inline-block;border-radius:2px;"></span>Garis baris (horizontal)
+                                </span>
+                                &nbsp;&nbsp;
+                                <span style="display:inline-flex;align-items:center;gap:0.3rem;">
+                                  <span style="width:3px;height:16px;background:#8B5CF6;display:inline-block;border-radius:2px;"></span>Garis kolom (vertikal)
+                                </span>
+                                &nbsp;&nbsp;
+                                <strong style="color:#37352F;">${lineCount} garis penutup</strong> dibutuhkan dari total ${N}
+                               </div>`
+                            : '';
+
+                        stepsHtml += `<div class="table-responsive" style="position:relative;">${lineCaption}`;
+                        stepsHtml += `<table class="matrix-table" style="font-size:0.8rem;text-align:right;border-collapse:collapse;">`;
+
+                        // Header kolom (K1..KN)
+                        stepsHtml += '<thead><tr><th style="background:#F7F7F5;font-size:0.7rem;color:rgba(55,53,47,0.5);padding:0.3rem 0.5rem;border:1px solid rgba(55,53,47,0.08);"></th>';
+                        for (let cIdx = 0; cIdx < N; cIdx++) {
+                            const isCovCol = cl[cIdx];
+                            stepsHtml += `<th style="font-size:0.7rem;padding:0.3rem 0.5rem;text-align:center;
+                                background:${isCovCol ? 'rgba(139,92,246,0.08)' : '#F7F7F5'};
+                                color:${isCovCol ? '#7C3AED' : 'rgba(55,53,47,0.5)'};
+                                border:1px solid rgba(55,53,47,0.08);
+                                border-left-width:${isCovCol ? '2px' : '1px'};
+                                border-left-color:${isCovCol ? '#8B5CF6' : 'rgba(55,53,47,0.08)'};
+                                border-right-width:${isCovCol ? '2px' : '1px'};
+                                border-right-color:${isCovCol ? '#8B5CF6' : 'rgba(55,53,47,0.08)'};
+                                ">K${cIdx+1}</th>`;
+                        }
+                        stepsHtml += '</tr></thead><tbody>';
+
+                        step.matrix.forEach((r, rIdx) => {
+                            const isCovRow = rl[rIdx];
+                            // Garis baris: border atas/bawah tebal biru
+                            const rowBorderTop    = isCovRow ? 'border-top:2.5px solid #3B82F6;' : 'border-top:1px solid rgba(55,53,47,0.06);';
+                            const rowBorderBottom = isCovRow ? 'border-bottom:2.5px solid #3B82F6;' : 'border-bottom:1px solid rgba(55,53,47,0.06);';
+
+                            stepsHtml += `<tr>`;
+                            // Row-label
+                            stepsHtml += `<td style="font-size:0.7rem;color:${isCovRow?'#2563EB':'rgba(55,53,47,0.45)'};font-weight:600;
+                                background:${isCovRow?'rgba(59,130,246,0.06)':'#F7F7F5'};padding:0.3rem 0.5rem;
+                                border:1px solid rgba(55,53,47,0.08);${rowBorderTop}${rowBorderBottom}
+                                border-right:${isCovRow?'2.5px solid #3B82F6':'1px solid rgba(55,53,47,0.08)'};
+                                ">A${rIdx+1}</td>`;
+
+                            r.forEach((val, cIdx) => {
+                                const isCovCol = cl[cIdx];
+                                const isZero   = Math.abs(val) < 1e-9;
+
+                                // Warna background berdasarkan coverage
+                                let bg = 'transparent';
+                                if (isCovRow && isCovCol) {
+                                    // Perpotongan dua garis: hatch pattern
+                                    bg = 'repeating-linear-gradient(45deg,rgba(139,92,246,0.06),rgba(139,92,246,0.06) 6px,rgba(59,130,246,0.06) 6px,rgba(59,130,246,0.06) 12px)';
+                                } else if (isCovRow) {
+                                    bg = 'rgba(59,130,246,0.05)';
+                                } else if (isCovCol) {
+                                    bg = 'rgba(139,92,246,0.05)';
+                                }
+
+                                // Border: garis baris biru + garis kolom ungu, keduanya jika berpotongan
+                                const bTop    = isCovRow ? '2.5px solid #3B82F6' : '1px solid rgba(55,53,47,0.06)';
+                                const bBottom = isCovRow ? '2.5px solid #3B82F6' : '1px solid rgba(55,53,47,0.06)';
+                                const bLeft   = isCovCol ? '2.5px solid #8B5CF6' : '1px solid rgba(55,53,47,0.06)';
+                                const bRight  = isCovCol ? '2.5px solid #8B5CF6' : '1px solid rgba(55,53,47,0.06)';
+
+                                // Nilai nol: merah bold + lingkaran
+                                const valDisplay = isZero
+                                    ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#EF4444;color:#fff;font-weight:700;font-size:0.75rem;">0</span>`
+                                    : `<span style="color:${(isCovRow||isCovCol)?'rgba(55,53,47,0.7)':'#334155'}">${Number.isInteger(val) ? val : val.toFixed(1)}</span>`;
+
+                                stepsHtml += `<td style="padding:0.3rem 0.5rem;text-align:center;
+                                    background:${bg};
+                                    border-top:${bTop};border-bottom:${bBottom};
+                                    border-left:${bLeft};border-right:${bRight};
+                                    min-width:42px;">${valDisplay}</td>`;
                             });
                             stepsHtml += '</tr>';
                         });
-                        stepsHtml += '</table></div>';
+                        stepsHtml += '</tbody></table></div>';
                     }
                     stepsHtml += `</div>`;
                 });
@@ -290,11 +611,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Error: ' + data.detail);
             }
         } catch (e) {
-            alert('Gagal terhubung ke API. Pastikan uvicorn backend.main:app berjalan.');
+            alert('Gagal terhubung ke API. Pastikan python -m uvicorn backend.main:app berjalan.');
         } finally {
             btn.disabled = false;
             spinner.style.display = 'none';
             btnText.innerText = "Jalankan Optimasi";
+            hideLoadingOverlay();
         }
     }
 
@@ -302,11 +624,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // CPM Logic
     function renderCpm() {
         setActiveNav(navCpm);
-        document.getElementById('topbar-breadcrumb').innerText = 'Project Scheduling';
+        document.getElementById('topbar-breadcrumb').innerText = 'Teori Jaringan';
         container.innerHTML = `
             <div class="op-module-wrap">
                 <div class="page-icon">📈</div>
-                <h1 class="op-module-title">Project Scheduling</h1>
+                <h1 class="op-module-title">Teori Jaringan</h1>
                 <p class="op-module-sub" style="margin-bottom: 2rem;">Hitung waktu mulai tercepat/terlambat dan identifikasi jalur kritis menggunakan CPM.</p>
                 
                 <div class="notion-props">
@@ -373,7 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     
                     <div class="notion-section" style="margin-top: 2rem;">
-                        <h3 class="op-ch-title" style="margin-bottom: 1rem;">Perhitungan Detail (Table)</h3>
+                        <h3 class="op-ch-title" style="margin-bottom: 1rem;">Perhitungan Detail Step-by-Step</h3>
                         <div id="cpm-table-container"></div>
                     </div>
                     
@@ -424,6 +746,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function addCpmRow(id='', name='', duration='', preds='') {
         const tbody = document.getElementById('cpm-tbody');
+        if (tbody.children.length >= 20) {
+            alert("Batas maksimal kegiatan tercapai. Tidak dapat menambahkan lebih dari 20 kegiatan.");
+            return;
+        }
         const tr = document.createElement('tr');
         tr.className = 'cpm-row';
         tr.innerHTML = `
@@ -493,9 +819,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const idInput = row.querySelector('.cpm-id');
             const id = idInput.value.trim().toUpperCase();
             const name = row.querySelector('.cpm-name').value.trim();
-            const durStr = row.querySelector('.cpm-duration').value.trim();
+            const durInput = row.querySelector('.cpm-duration');
+            const durStr = durInput.value.trim();
             const dur = parseFloat(durStr) || 0;
             const preds = row.querySelector('.cpm-preds').value.trim();
+            
+            if (durInput.validity.badInput || (durStr !== '' && isNaN(Number(durStr)))) {
+                incompleteData = true;
+            }
             
             // Cegah program berjalan jika ada SATU SAJA kolom wajib yang belum terisi di baris manapun
             if (!id || !name || durStr === '') {
@@ -509,12 +840,52 @@ document.addEventListener('DOMContentLoaded', () => {
         const actCount = Object.keys(activities).length;
 
         if (incompleteData) {
-            alert('Gagal: Terdapat data yang belum lengkap. Pastikan seluruh baris telah terisi ID Kegiatan, Deskripsi Tugas, dan Durasinya.');
+            alert('Gagal: Terdapat data yang belum lengkap atau input durasi bukan angka. Pastikan seluruh baris telah terisi ID Kegiatan, Deskripsi Tugas, dan Durasinya (harus berupa angka).');
+            return;
+        }
+
+        // Validasi Predecessor dan Durasi Logis
+        let invalidPred = null;
+        let selfReferencingPred = null;
+        let negativeDurationAct = null;
+
+        Object.keys(activities).forEach(id => {
+            const act = activities[id];
+            
+            // Validasi: Durasi tidak boleh negatif secara logika nyata
+            if (act.duration < 0) {
+                negativeDurationAct = id;
+            }
+
+            const predsRaw = act.predecessors;
+            const preds = predsRaw.split(/[,;\s]+/).map(p => p.trim().toUpperCase()).filter(p => p && p !== '-' && p !== 'NONE' && p !== 'N/A');
+            
+            preds.forEach(p => {
+                if (!activities[p]) {
+                    invalidPred = p; // Predecessor yang diinput tidak ada di tabel
+                } else if (p === id) {
+                    selfReferencingPred = p; // Predecessor merujuk pada dirinya sendiri
+                }
+            });
+        });
+        
+        if (negativeDurationAct) {
+            alert(`Gagal: Durasi untuk kegiatan "${negativeDurationAct}" bernilai negatif. Secara logika, waktu kegiatan tidak boleh kurang dari nol.`);
+            return;
+        }
+
+        if (invalidPred) {
+            alert(`Gagal: ID Predecessor "${invalidPred}" belum didaftarkan pada tabel kegiatan. Harap masukkan ID yang valid.`);
+            return;
+        }
+
+        if (selfReferencingPred) {
+            alert(`Gagal: Kegiatan "${selfReferencingPred}" tidak bisa memiliki predecessor dirinya sendiri (Self-Referencing). Hal ini menyalahi logika urutan.`);
             return;
         }
 
         if (duplicateId) {
-            alert('Gagal: Terdapat duplikasi ID Kegiatan (kolom ID bersorot merah). Harap gunakan ID yang unik untuk setiap kegiatan.');
+            alert('Gagal: Terdapat duplikasi ID Kegiatan. Harap gunakan ID yang unik untuk setiap baris tugas.');
             return;
         }
 
@@ -526,6 +897,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = true;
         spinner.style.display = 'inline-block';
         btnText.innerText = "Kalkulasi Berjalan...";
+        showLoadingOverlay('Sedang menghitung jalur kritis…');
 
         try {
             const res = await fetch(`${API_URL}/api/solve/cpm`, {
@@ -539,52 +911,308 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('cpm-results-container').style.display = 'block';
                 document.getElementById('cpm-total-duration').innerHTML = `${data.total_duration} <span style="font-size: 1rem; color: #64748B;">Hari</span>`;
                 
-                // Extract critical path
+                // ── Tampilkan SEMUA Jalur Kritis (Multiple Critical Paths) ──
                 const acts = data.activities;
-                const cpList = Object.keys(acts).filter(k => acts[k].is_critical).sort((a,b) => acts[a].es - acts[b].es);
-                document.getElementById('cpm-critical-path').innerText = cpList.join(' → ');
+                const criticalPaths = data.critical_paths || [];
 
-                // Build Table Detail
-                let tableHtml = `
+                // Periksa apakah ada slack negatif (anomali)
+                const hasNegativeSlack = Object.values(acts).some(a => a.slack_warning);
+                if (hasNegativeSlack) {
+                    const warnEl = document.createElement('div');
+                    warnEl.style.cssText = 'background:#FEF3C7; border:1px solid #F59E0B; border-radius:4px; padding:0.8rem 1rem; margin-bottom:1rem; font-size:0.85rem; color:#92400E;';
+                    warnEl.innerHTML = '⚠️ <strong>Perhatian:</strong> Terdeteksi nilai Slack negatif pada satu atau lebih kegiatan. Hal ini secara teoritis tidak mungkin terjadi dalam CPM yang valid. Periksa kembali apakah ada durasi yang tidak masuk akal atau predecessor yang salah.';
+                    document.getElementById('cpm-results-container').prepend(warnEl);
+                }
+
+                // Render jalur kritis
+                const cpContainer = document.getElementById('cpm-critical-path');
+                if (criticalPaths.length === 0) {
+                    cpContainer.innerText = '—';
+                } else if (criticalPaths.length === 1) {
+                    cpContainer.innerText = criticalPaths[0].join(' → ');
+                } else {
+                    // Jalur kritis ganda — tampilkan tiap jalur pada baris terpisah
+                    cpContainer.innerHTML = criticalPaths.map((path, i) =>
+                        `<div style="margin-bottom:0.4rem;">
+                            <span style="font-size:0.7rem; background:#EF4444; color:#fff; padding:0.1rem 0.4rem; border-radius:10px; margin-right:6px;">Jalur ${i + 1}</span>
+                            <span style="font-size:1.1rem; font-weight:700;">${path.join(' → ')}</span>
+                        </div>`
+                    ).join('');
+                }
+
+                // Build Step-by-Step Detail
+                const topoOrder = Object.keys(acts).sort((a, b) => acts[a].es - acts[b].es || a.localeCompare(b));
+
+                // Helper: get predecessors label
+                const getPredLabel = (id) => {
+                    const preds = acts[id].predecessors;
+                    if (!preds || preds.length === 0) return '<em style="color: rgba(55,53,47,0.4);">Tidak ada (awal jaringan)</em>';
+                    return preds.map(p => `<strong>${p}</strong>`).join(', ');
+                };
+
+                // ── STEP 1: Topological / Network Structure ──
+                let detailHtml = `
+                <div class="step-card" style="border-left: 3px solid #6366F1; background: rgba(99,102,241,0.04); border-radius: 4px; padding: 1.2rem 1.5rem; margin-bottom: 1.2rem;">
+                    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.8rem;">
+                        <span style="background:#6366F1; color:#fff; font-weight:700; font-size:0.75rem; padding:0.2rem 0.6rem; border-radius:20px; letter-spacing:0.05em;">LANGKAH 1</span>
+                        <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#37352F;">Identifikasi Urutan Kegiatan & Struktur Jaringan</h4>
+                    </div>
+                    <p style="font-size:0.85rem; color:rgba(55,53,47,0.65); margin-bottom:1rem; line-height:1.6;">
+                        Langkah pertama adalah menentukan urutan topologis kegiatan — setiap kegiatan hanya dapat dimulai setelah semua <em>predecessor</em>-nya selesai. 
+                        Urutan ini menjadi dasar Forward Pass dan Backward Pass.
+                    </p>
                     <div class="table-responsive">
-                        <table class="matrix-table" style="text-align: center; width: 100%;">
+                        <table class="matrix-table" style="width:100%; font-size:0.85rem;">
                             <thead>
                                 <tr>
-                                    <th style="border-bottom: 2px solid rgba(55,53,47,0.16);">ID</th>
-                                    <th class="text-left" style="border-bottom: 2px solid rgba(55,53,47,0.16);">Deskripsi</th>
-                                    <th class="text-right" style="border-bottom: 2px solid rgba(55,53,47,0.16);">Durasi</th>
-                                    <th class="text-right" title="Earliest Start" style="border-bottom: 2px solid rgba(55,53,47,0.16);">ES</th>
-                                    <th class="text-right" title="Earliest Finish" style="border-bottom: 2px solid rgba(55,53,47,0.16);">EF</th>
-                                    <th class="text-right" title="Latest Start" style="border-bottom: 2px solid rgba(55,53,47,0.16);">LS</th>
-                                    <th class="text-right" title="Latest Finish" style="border-bottom: 2px solid rgba(55,53,47,0.16);">LF</th>
-                                    <th class="text-right" title="Kelonggaran Waktu" style="border-bottom: 2px solid rgba(55,53,47,0.16);">Slack</th>
+                                    <th style="width:60px;">ID</th>
+                                    <th class="text-left">Nama Kegiatan</th>
+                                    <th class="text-right" style="width:90px;">Durasi (Hari)</th>
+                                    <th class="text-left">Predecessor</th>
                                 </tr>
                             </thead>
                             <tbody>
                 `;
-                
-                Object.keys(acts).sort().forEach(id => {
+                topoOrder.forEach(id => {
                     const a = acts[id];
-                    const isCrit = a.is_critical;
-                    const rowBg = isCrit ? 'background: rgba(235, 87, 87, 0.05);' : 'background: transparent;';
-                    const textColor = isCrit ? 'color: #EB5757; font-weight: 600;' : 'color: #37352F;';
-                    
-                    tableHtml += `
-                        <tr style="${rowBg}">
-                            <td style="${textColor}">${id}</td>
-                            <td class="text-left" style="${textColor}">${a.name}</td>
-                            <td class="text-right" style="color: rgba(55,53,47,0.65);">${a.duration}</td>
-                            <td class="text-right" style="color: rgba(55,53,47,0.65); font-weight: 500;">${a.es}</td>
-                            <td class="text-right" style="color: rgba(55,53,47,0.65); font-weight: 500;">${a.ef}</td>
-                            <td class="text-right" style="color: rgba(55,53,47,0.65); font-weight: 500;">${a.ls}</td>
-                            <td class="text-right" style="color: rgba(55,53,47,0.65); font-weight: 500;">${a.lf}</td>
-                            <td class="text-right" style="${isCrit ? 'color: #EB5757; font-weight: 600;' : 'color: rgba(55,53,47,0.4); font-weight: 500;'}">${a.slack}</td>
+                    detailHtml += `
+                        <tr>
+                            <td style="font-weight:700; color:#6366F1;">${id}</td>
+                            <td class="text-left" style="color:#37352F;">${a.name}</td>
+                            <td class="text-right" style="color:#37352F; font-weight:600;">${a.duration}</td>
+                            <td class="text-left" style="color:#37352F;">${getPredLabel(id)}</td>
                         </tr>
                     `;
                 });
-                tableHtml += '</tbody></table></div>';
-                
-                document.getElementById('cpm-table-container').innerHTML = tableHtml;
+                detailHtml += `</tbody></table></div></div>`;
+
+                // ── STEP 2: Forward Pass ──
+                detailHtml += `
+                <div class="step-card" style="border-left: 3px solid #10B981; background: rgba(16,185,129,0.04); border-radius: 4px; padding: 1.2rem 1.5rem; margin-bottom: 1.2rem;">
+                    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.8rem;">
+                        <span style="background:#10B981; color:#fff; font-weight:700; font-size:0.75rem; padding:0.2rem 0.6rem; border-radius:20px; letter-spacing:0.05em;">LANGKAH 2</span>
+                        <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#37352F;">Forward Pass — Perhitungan ES & EF</h4>
+                    </div>
+                    <p style="font-size:0.85rem; color:rgba(55,53,47,0.65); margin-bottom:1rem; line-height:1.6;">
+                        <strong>ES (Earliest Start)</strong> = nilai EF terbesar dari semua predecessor.<br>
+                        <strong>EF (Earliest Finish)</strong> = ES + Durasi kegiatan.<br>
+                        Kegiatan tanpa predecessor memiliki ES = 0.
+                    </p>
+                `;
+                topoOrder.forEach(id => {
+                    const a = acts[id];
+                    const preds = a.predecessors || [];
+                    let esFormula = '';
+                    let esFormulaDetail = '';
+                    if (preds.length === 0) {
+                        esFormula = `ES<sub>${id}</sub> = 0`;
+                        esFormulaDetail = `<span style="color:rgba(55,53,47,0.4);font-size:0.78rem;">(awal jaringan — tidak ada predecessor)</span>`;
+                    } else if (preds.length === 1) {
+                        const p = preds[0];
+                        const ef_p = acts[p] ? acts[p].ef : '?';
+                        esFormula = `ES<sub>${id}</sub> = EF<sub>${p}</sub>`;
+                        esFormulaDetail = `= <strong>${ef_p}</strong>`;
+                    } else {
+                        const parts = preds.map(p => `EF<sub>${p}</sub>=${acts[p]?acts[p].ef:'?'}`).join(', ');
+                        esFormula = `ES<sub>${id}</sub> = max(${parts})`;
+                        esFormulaDetail = `= <strong>${a.es}</strong>`;
+                    }
+                    const isCrit = a.is_critical;
+                    detailHtml += `
+                        <div style="display:flex; align-items:flex-start; gap:1rem; padding:0.8rem; margin-bottom:0.5rem; border-radius:4px; background:${isCrit ? 'rgba(235,87,87,0.06)' : 'rgba(55,53,47,0.03)'}; border:1px solid ${isCrit ? 'rgba(235,87,87,0.2)' : 'rgba(55,53,47,0.09)'};">
+                            <div style="min-width:32px; height:32px; border-radius:50%; background:${isCrit ? '#EF4444' : '#10B981'}; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:0.85rem; flex-shrink:0;">${id}</div>
+                            <div style="flex:1; min-width:0;">
+                                <div style="font-weight:600; font-size:0.85rem; color:#37352F; margin-bottom:0.4rem;">${a.name} ${isCrit ? '<span style="font-size:0.7rem; background:#EF4444; color:#fff; padding:0.1rem 0.4rem; border-radius:10px; margin-left:4px;">KRITIS</span>' : ''}</div>
+                                <!-- Rumus ES dalam kotak formula -->
+                                <div style="display:flex; flex-wrap:wrap; gap:0.3rem; align-items:center; font-family:monospace; font-size:0.8rem; background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.15); border-radius:4px; padding:0.35rem 0.6rem; margin-bottom:0.3rem; color:#065F46;">
+                                    📐 ${esFormula} ${esFormulaDetail}
+                                </div>
+                                <!-- Rumus EF -->
+                                <div style="display:flex; flex-wrap:wrap; gap:0.3rem; align-items:center; font-family:monospace; font-size:0.8rem; background:rgba(16,185,129,0.04); border:1px solid rgba(16,185,129,0.1); border-radius:4px; padding:0.35rem 0.6rem; color:#065F46;">
+                                    ➡ EF<sub>${id}</sub> = ES + Durasi = <strong>${a.es}</strong> + <strong>${a.duration}</strong> = <strong style="color:#047857;">${a.ef}</strong>
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:0.8rem; flex-shrink:0;">
+                                <div style="text-align:center; padding:0.4rem 0.8rem; background:#fff; border:1px solid rgba(16,185,129,0.3); border-radius:4px;">
+                                    <div style="font-size:0.7rem; color:#10B981; font-weight:600;">ES</div>
+                                    <div style="font-size:1.1rem; font-weight:700; color:#37352F;">${a.es}</div>
+                                </div>
+                                <div style="text-align:center; padding:0.4rem 0.8rem; background:#fff; border:1px solid rgba(16,185,129,0.3); border-radius:4px;">
+                                    <div style="font-size:0.7rem; color:#10B981; font-weight:600;">EF</div>
+                                    <div style="font-size:1.1rem; font-weight:700; color:#37352F;">${a.ef}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                detailHtml += `
+                    <div style="margin-top:0.8rem; padding:0.8rem 1rem; background:rgba(16,185,129,0.1); border-radius:4px; font-size:0.85rem; color:#065F46;">
+                        ✅ <strong>Total Durasi Proyek</strong> = EF terbesar dari semua kegiatan = <strong>${data.total_duration} Hari</strong>
+                    </div>
+                </div>`;
+
+                // ── STEP 3: Backward Pass ──
+                const revOrder = [...topoOrder].reverse();
+                detailHtml += `
+                <div class="step-card" style="border-left: 3px solid #F59E0B; background: rgba(245,158,11,0.04); border-radius: 4px; padding: 1.2rem 1.5rem; margin-bottom: 1.2rem;">
+                    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.8rem;">
+                        <span style="background:#F59E0B; color:#fff; font-weight:700; font-size:0.75rem; padding:0.2rem 0.6rem; border-radius:20px; letter-spacing:0.05em;">LANGKAH 3</span>
+                        <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#37352F;">Backward Pass — Perhitungan LF & LS</h4>
+                    </div>
+                    <p style="font-size:0.85rem; color:rgba(55,53,47,0.65); margin-bottom:1rem; line-height:1.6;">
+                        <strong>LF (Latest Finish)</strong> = nilai LS terkecil dari semua successor. Kegiatan akhir memiliki LF = Total Durasi Proyek.<br>
+                        <strong>LS (Latest Start)</strong> = LF − Durasi kegiatan.<br>
+                        Backward Pass dilakukan dari kegiatan akhir ke awal.
+                    </p>
+                `;
+
+                // Build successor map in JS for formula display
+                const successorMap = {};
+                topoOrder.forEach(id => { successorMap[id] = []; });
+                topoOrder.forEach(id => {
+                    (acts[id].predecessors || []).forEach(p => {
+                        if (successorMap[p]) successorMap[p].push(id);
+                    });
+                });
+
+                revOrder.forEach(id => {
+                    const a = acts[id];
+                    const succs = successorMap[id] || [];
+                    let lfFormula = '';
+                    let lfFormulaDetail = '';
+                    if (succs.length === 0) {
+                        lfFormula = `LF<sub>${id}</sub> = Total Durasi`;
+                        lfFormulaDetail = `= <strong>${data.total_duration}</strong> <span style="color:rgba(55,53,47,0.4);font-size:0.78rem;">(kegiatan akhir)</span>`;
+                    } else if (succs.length === 1) {
+                        const s = succs[0];
+                        lfFormula = `LF<sub>${id}</sub> = LS<sub>${s}</sub>`;
+                        lfFormulaDetail = `= <strong>${acts[s].ls}</strong>`;
+                    } else {
+                        const parts = succs.map(s => `LS<sub>${s}</sub>=${acts[s].ls}`).join(', ');
+                        lfFormula = `LF<sub>${id}</sub> = min(${parts})`;
+                        lfFormulaDetail = `= <strong>${a.lf}</strong>`;
+                    }
+                    const isCrit = a.is_critical;
+                    detailHtml += `
+                        <div style="display:flex; align-items:flex-start; gap:1rem; padding:0.8rem; margin-bottom:0.5rem; border-radius:4px; background:${isCrit ? 'rgba(235,87,87,0.06)' : 'rgba(55,53,47,0.03)'}; border:1px solid ${isCrit ? 'rgba(235,87,87,0.2)' : 'rgba(55,53,47,0.09)'};">
+                            <div style="min-width:32px; height:32px; border-radius:50%; background:${isCrit ? '#EF4444' : '#F59E0B'}; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:0.85rem; flex-shrink:0;">${id}</div>
+                            <div style="flex:1; min-width:0;">
+                                <div style="font-weight:600; font-size:0.85rem; color:#37352F; margin-bottom:0.4rem;">${a.name} ${isCrit ? '<span style="font-size:0.7rem; background:#EF4444; color:#fff; padding:0.1rem 0.4rem; border-radius:10px; margin-left:4px;">KRITIS</span>' : ''}</div>
+                                <!-- Rumus LF dalam kotak formula -->
+                                <div style="display:flex; flex-wrap:wrap; gap:0.3rem; align-items:center; font-family:monospace; font-size:0.8rem; background:rgba(245,158,11,0.06); border:1px solid rgba(245,158,11,0.15); border-radius:4px; padding:0.35rem 0.6rem; margin-bottom:0.3rem; color:#92400E;">
+                                    📐 ${lfFormula} ${lfFormulaDetail}
+                                </div>
+                                <!-- Rumus LS -->
+                                <div style="display:flex; flex-wrap:wrap; gap:0.3rem; align-items:center; font-family:monospace; font-size:0.8rem; background:rgba(245,158,11,0.04); border:1px solid rgba(245,158,11,0.1); border-radius:4px; padding:0.35rem 0.6rem; color:#92400E;">
+                                    ⬅ LS<sub>${id}</sub> = LF − Durasi = <strong>${a.lf}</strong> − <strong>${a.duration}</strong> = <strong style="color:#B45309;">${a.ls}</strong>
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:0.8rem; flex-shrink:0;">
+                                <div style="text-align:center; padding:0.4rem 0.8rem; background:#fff; border:1px solid rgba(245,158,11,0.3); border-radius:4px;">
+                                    <div style="font-size:0.7rem; color:#D97706; font-weight:600;">LS</div>
+                                    <div style="font-size:1.1rem; font-weight:700; color:#37352F;">${a.ls}</div>
+                                </div>
+                                <div style="text-align:center; padding:0.4rem 0.8rem; background:#fff; border:1px solid rgba(245,158,11,0.3); border-radius:4px;">
+                                    <div style="font-size:0.7rem; color:#D97706; font-weight:600;">LF</div>
+                                    <div style="font-size:1.1rem; font-weight:700; color:#37352F;">${a.lf}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                detailHtml += `</div>`;
+
+                // ── STEP 4: Slack Calculation ──
+                detailHtml += `
+                <div class="step-card" style="border-left: 3px solid #8B5CF6; background: rgba(139,92,246,0.04); border-radius: 4px; padding: 1.2rem 1.5rem; margin-bottom: 1.2rem;">
+                    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.8rem;">
+                        <span style="background:#8B5CF6; color:#fff; font-weight:700; font-size:0.75rem; padding:0.2rem 0.6rem; border-radius:20px; letter-spacing:0.05em;">LANGKAH 4</span>
+                        <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#37352F;">Kalkulasi Slack (Float) & Penentuan Jalur Kritis</h4>
+                    </div>
+                    <p style="font-size:0.85rem; color:rgba(55,53,47,0.65); margin-bottom:1rem; line-height:1.6;">
+                        <strong>Slack</strong> = LS − ES (atau LF − EF). Ini adalah kelonggaran waktu maksimal sebelum kegiatan menyebabkan keterlambatan proyek.<br>
+                        Kegiatan dengan <strong>Slack = 0</strong> disebut <strong>kegiatan kritis</strong> dan membentuk jalur kritis.
+                    </p>
+                    <div style="display:flex; flex-wrap:wrap; gap:0.6rem;">
+                `;
+                topoOrder.forEach(id => {
+                    const a = acts[id];
+                    const isCrit = a.is_critical;
+                    detailHtml += `
+                        <div style="padding:0.7rem 1rem; border-radius:6px; background:${isCrit ? 'rgba(235,87,87,0.08)' : 'rgba(55,53,47,0.04)'}; border:1px solid ${isCrit ? 'rgba(235,87,87,0.25)' : 'rgba(55,53,47,0.1)'}; min-width:160px; flex:1;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
+                                <span style="font-weight:700; color:${isCrit ? '#EF4444' : '#37352F'}; font-size:0.9rem;">${id} — ${a.name.length > 18 ? a.name.substring(0,18)+'…' : a.name}</span>
+                                ${isCrit ? '<span style="font-size:0.65rem; background:#EF4444; color:#fff; padding:0.1rem 0.4rem; border-radius:10px;">KRITIS</span>' : ''}
+                            </div>
+                            <div style="font-size:0.78rem; color:rgba(55,53,47,0.6); font-family:monospace;">Slack = LS − ES = ${a.ls} − ${a.es} = <strong style="color:${isCrit ? '#EF4444' : '#8B5CF6'};">${a.slack}</strong></div>
+                        </div>
+                    `;
+                });
+                detailHtml += `</div></div>`;
+
+                // ── STEP 5: Summary Table ──
+                detailHtml += `
+                <div class="step-card" style="border-left: 3px solid #37352F; background: rgba(55,53,47,0.03); border-radius: 4px; padding: 1.2rem 1.5rem; margin-bottom: 1.2rem;">
+                    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.8rem;">
+                        <span style="background:#37352F; color:#fff; font-weight:700; font-size:0.75rem; padding:0.2rem 0.6rem; border-radius:20px; letter-spacing:0.05em;">LANGKAH 5</span>
+                        <h4 style="margin:0; font-size:0.95rem; font-weight:700; color:#37352F;">Tabel Rekap Hasil Lengkap</h4>
+                    </div>
+                    <p style="font-size:0.85rem; color:rgba(55,53,47,0.65); margin-bottom:1rem; line-height:1.6;">
+                        Berikut adalah rekap seluruh nilai ES, EF, LS, LF, dan Slack untuk semua kegiatan. Baris dengan latar merah menandakan kegiatan kritis.
+                    </p>
+                    <div class="table-responsive">
+                        <table class="matrix-table" style="text-align: center; width: 100%; font-size:0.85rem;">
+                            <thead>
+                                <tr>
+                                    <th style="border-bottom: 2px solid rgba(55,53,47,0.16);">ID</th>
+                                    <th class="text-left" style="border-bottom: 2px solid rgba(55,53,47,0.16);">Nama Kegiatan</th>
+                                    <th class="text-right" style="border-bottom: 2px solid rgba(55,53,47,0.16);">Durasi</th>
+                                    <th class="text-right" title="Earliest Start" style="border-bottom: 2px solid rgba(55,53,47,0.16); color:#10B981;">ES</th>
+                                    <th class="text-right" title="Earliest Finish" style="border-bottom: 2px solid rgba(55,53,47,0.16); color:#10B981;">EF</th>
+                                    <th class="text-right" title="Latest Start" style="border-bottom: 2px solid rgba(55,53,47,0.16); color:#D97706;">LS</th>
+                                    <th class="text-right" title="Latest Finish" style="border-bottom: 2px solid rgba(55,53,47,0.16); color:#D97706;">LF</th>
+                                    <th class="text-right" title="Kelonggaran Waktu" style="border-bottom: 2px solid rgba(55,53,47,0.16); color:#8B5CF6;">Slack</th>
+                                    <th style="border-bottom: 2px solid rgba(55,53,47,0.16);">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                topoOrder.forEach(id => {
+                    const a = acts[id];
+                    const isCrit = a.is_critical;
+                    const hasWarn = a.slack_warning;
+                    const rowBg = hasWarn
+                        ? 'background: rgba(245,158,11,0.06);'
+                        : (isCrit ? 'background: rgba(235, 87, 87, 0.06);' : 'background: transparent;');
+                    const idColor = isCrit ? 'color: #EF4444; font-weight: 700;' : 'color: #37352F; font-weight: 700;';
+                    const slackStyle = hasWarn
+                        ? 'color:#D97706; font-weight:700;'
+                        : (isCrit ? 'color:#EF4444; font-weight:700;' : 'color:#8B5CF6; font-weight:600;');
+                    const slackDisplay = hasWarn
+                        ? `${a.slack} <span title="Slack negatif — anomali input" style="color:#D97706;">⚠</span>`
+                        : `${a.slack}`;
+                    const statusBadge = hasWarn
+                        ? `<span style="font-size:0.7rem; background:#F59E0B; color:#fff; padding:0.2rem 0.5rem; border-radius:10px; white-space:nowrap;">⚠ Anomali</span>`
+                        : (isCrit
+                            ? `<span style="font-size:0.7rem; background:#EF4444; color:#fff; padding:0.2rem 0.5rem; border-radius:10px; white-space:nowrap;">⚡ Kritis</span>`
+                            : `<span style="font-size:0.7rem; background:rgba(55,53,47,0.1); color:rgba(55,53,47,0.6); padding:0.2rem 0.5rem; border-radius:10px; white-space:nowrap;">Normal</span>`);
+                    detailHtml += `
+                        <tr style="${rowBg}">
+                            <td style="${idColor}">${id}</td>
+                            <td class="text-left" style="color:#37352F;">${a.name}</td>
+                            <td class="text-right" style="color: rgba(55,53,47,0.65);">${a.duration}</td>
+                            <td class="text-right" style="color:#10B981; font-weight:600;">${a.es}</td>
+                            <td class="text-right" style="color:#10B981; font-weight:600;">${a.ef}</td>
+                            <td class="text-right" style="color:#D97706; font-weight:600;">${a.ls}</td>
+                            <td class="text-right" style="color:#D97706; font-weight:600;">${a.lf}</td>
+                            <td class="text-right" style="${slackStyle}">${slackDisplay}</td>
+                            <td style="text-align:center;">${statusBadge}</td>
+                        </tr>
+                    `;
+                });
+                detailHtml += `</tbody></table></div></div>`;
+
+                document.getElementById('cpm-table-container').innerHTML = detailHtml;
 
                 // Render Vis.js Network
                 const graphvizDiv = document.getElementById('cpm-graphviz');
@@ -606,23 +1234,39 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         nodes.push({
                             id: id,
-                            label: `<b>${id}</b>\n<i>${desc}</i>\n\nES: <b>${a.es}</b> | EF: <b>${a.ef}</b>\nLS: <b>${a.ls}</b> | LF: <b>${a.lf}</b>\nSlack: <b>${a.slack}</b>`,
+                            label: isCrit
+                                ? `<b>⚡ ${id}</b>\n<i>${desc}</i>\n\nES: <b>${a.es}</b> | EF: <b>${a.ef}</b>\nLS: <b>${a.ls}</b> | LF: <b>${a.lf}</b>\n<b style="color:#DC2626">Slack: ${a.slack}</b>`
+                                : `<b>${id}</b>\n<i>${desc}</i>\n\nES: <b>${a.es}</b> | EF: <b>${a.ef}</b>\nLS: <b>${a.ls}</b> | LF: <b>${a.lf}</b>\nSlack: <b>${a.slack}</b>`,
                             shape: 'box',
-                            font: { 
-                                multi: 'html', 
+                            font: {
+                                multi: 'html',
                                 face: 'Inter, sans-serif',
-                                color: isCrit ? '#991B1B' : '#1E3A8A',
-                                size: 14,
-                                align: 'center'
+                                color: isCrit ? '#7F1D1D' : '#1E3A8A',
+                                size: isCrit ? 15 : 13,
+                                align: 'center',
+                                bold: { color: isCrit ? '#7F1D1D' : '#1E3A8A', size: isCrit ? 16 : 14 }
                             },
                             color: {
-                                background: isCrit ? '#FEF2F2' : '#EFF6FF',
-                                border: isCrit ? '#EF4444' : '#3B82F6',
-                                highlight: { background: isCrit ? '#FECACA' : '#DBEAFE', border: isCrit ? '#DC2626' : '#2563EB' }
+                                // Kritis: merah solid pekat | Normal: biru muda
+                                background: isCrit ? '#FEE2E2' : '#EFF6FF',
+                                border:     isCrit ? '#DC2626' : '#93C5FD',
+                                highlight: {
+                                    background: isCrit ? '#FECACA' : '#DBEAFE',
+                                    border:     isCrit ? '#B91C1C' : '#3B82F6'
+                                },
+                                hover: {
+                                    background: isCrit ? '#FCA5A5' : '#BFDBFE',
+                                    border:     isCrit ? '#EF4444' : '#60A5FA'
+                                }
                             },
-                            borderWidth: isCrit ? 3 : 1,
-                            shadow: true,
-                            margin: 15
+                            // Border jauh lebih tebal untuk jalur kritis
+                            borderWidth:          isCrit ? 4 : 1,
+                            borderWidthSelected:  isCrit ? 5 : 2,
+                            // Glow shadow merah untuk kritis, abu halus untuk normal
+                            shadow: isCrit
+                                ? { enabled: true, color: 'rgba(220,38,38,0.45)', size: 14, x: 0, y: 0 }
+                                : { enabled: true, color: 'rgba(55,53,47,0.1)', size: 6, x: 1, y: 2 },
+                            margin: 14
                         });
                         
                         a.predecessors.forEach(p => {
@@ -631,9 +1275,18 @@ document.addEventListener('DOMContentLoaded', () => {
                                 edges.push({
                                     from: p,
                                     to: id,
-                                    arrows: 'to',
-                                    color: { color: critEdge ? '#EF4444' : '#94A3B8', highlight: critEdge ? '#DC2626' : '#64748B' },
-                                    width: critEdge ? 3 : 1.5,
+                                    arrows: { to: { enabled: true, scaleFactor: critEdge ? 1.4 : 0.9 } },
+                                    // Jalur kritis: merah pekat + lebih tebal; jalur biasa: abu tipis
+                                    color: {
+                                        color:     critEdge ? '#DC2626' : '#CBD5E1',
+                                        highlight: critEdge ? '#B91C1C' : '#64748B',
+                                        hover:     critEdge ? '#EF4444' : '#94A3B8'
+                                    },
+                                    width: critEdge ? 4 : 1.5,
+                                    dashes: false,
+                                    shadow: critEdge
+                                        ? { enabled: true, color: 'rgba(220,38,38,0.3)', size: 8, x: 0, y: 0 }
+                                        : false,
                                     smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 }
                                 });
                             }
@@ -641,19 +1294,71 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     
                     const netData = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+
+                    // Layout adaptif: makin banyak node, makin rapat jarak antar level & node
+                    const nodeCount = Object.keys(acts).length;
+                    const levelSep = nodeCount >= 15 ? 180 : nodeCount >= 10 ? 220 : 260;
+                    const nodeSpac = nodeCount >= 15 ? 80  : nodeCount >= 10 ? 100 : 130;
+                    // Tinggi container adaptif agar tidak tumpang tindih
+                    graphvizDiv.style.height = nodeCount >= 15 ? '680px' : nodeCount >= 10 ? '580px' : '480px';
+
                     const options = {
                         layout: {
                             hierarchical: {
+                                enabled: true,
                                 direction: 'LR',
                                 sortMethod: 'directed',
-                                levelSeparation: 250,
-                                nodeSpacing: 120
+                                levelSeparation: levelSep,
+                                nodeSpacing: nodeSpac,
+                                treeSpacing: nodeSpac,
+                                blockShifting: true,
+                                edgeMinimization: true,
+                                parentCentralization: true,
+                                shakeTowards: 'leaves'
                             }
                         },
-                        physics: false,
-                        interaction: { dragNodes: true, zoomView: true, dragView: true, hover: true }
+                        nodes: {
+                            widthConstraint: { minimum: 100, maximum: 160 }
+                        },
+                        // Physics hanya aktif saat stabilisasi awal agar node tidak tumpang tindih
+                        physics: {
+                            enabled: true,
+                            stabilization: {
+                                enabled: true,
+                                iterations: 250,
+                                updateInterval: 25,
+                                fit: true
+                            },
+                            hierarchicalRepulsion: {
+                                centralGravity: 0.0,
+                                springLength: nodeSpac,
+                                springConstant: 0.01,
+                                nodeDistance: nodeSpac + 20,
+                                damping: 0.09
+                            },
+                            solver: 'hierarchicalRepulsion'
+                        },
+                        interaction: {
+                            dragNodes: true,
+                            zoomView: true,
+                            dragView: true,
+                            hover: true,
+                            tooltipDelay: 200
+                        }
                     };
-                    new vis.Network(graphvizDiv, netData, options);
+
+                    const network = new vis.Network(graphvizDiv, netData, options);
+
+                    // Setelah stabilisasi selesai: matikan physics & zoom-fit agar diagram pas layar
+                    network.once('stabilizationIterationsDone', () => {
+                        network.setOptions({ physics: { enabled: false } });
+                        network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+                    });
+                    // Fallback: paksa fit setelah 1.5 detik jika event tidak terpanggil
+                    setTimeout(() => {
+                        network.setOptions({ physics: { enabled: false } });
+                        network.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } });
+                    }, 1500);
                 } else {
                     graphvizDiv.innerText = "Library Vis.js tidak dimuat. Refresh halaman jika koneksi internet terputus.";
                 }
@@ -662,11 +1367,65 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Error: ' + data.detail);
             }
         } catch (e) {
-            alert('Gagal terhubung ke API. Pastikan uvicorn backend.main:app berjalan.');
+            alert('Gagal terhubung ke API. Pastikan python -m uvicorn backend.main:app berjalan.');
         } finally {
             btn.disabled = false;
             spinner.style.display = 'none';
             btnText.innerText = "Hitung Jalur Kritis";
+            hideLoadingOverlay();
+        }
+    }
+
+    // ── Loading Overlay helpers ──
+    function showLoadingOverlay(message) {
+        let overlay = document.getElementById('loading-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'loading-overlay';
+            overlay.style.cssText = [
+                'position:fixed', 'inset:0', 'z-index:9999',
+                'background:rgba(255,255,255,0.82)',
+                'backdrop-filter:blur(4px)',
+                '-webkit-backdrop-filter:blur(4px)',
+                'display:flex', 'flex-direction:column',
+                'align-items:center', 'justify-content:center',
+                'gap:1rem', 'transition:opacity 0.2s'
+            ].join(';');
+            overlay.innerHTML = `
+                <div style="
+                    width:48px; height:48px;
+                    border:4px solid rgba(55,53,47,0.1);
+                    border-top-color:#4F46E5;
+                    border-radius:50%;
+                    animation:spin 0.8s linear infinite;
+                "></div>
+                <div id="loading-overlay-msg" style="
+                    font-size:0.95rem; font-weight:600;
+                    color:#37352F; letter-spacing:0.01em;
+                "></div>
+                <div style="font-size:0.78rem; color:rgba(55,53,47,0.45);">
+                    Mohon tunggu, jangan tutup halaman ini
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            // Inject keyframe sekali
+            if (!document.getElementById('loading-keyframe')) {
+                const style = document.createElement('style');
+                style.id = 'loading-keyframe';
+                style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+                document.head.appendChild(style);
+            }
+        }
+        document.getElementById('loading-overlay-msg').textContent = message || 'Sedang memproses…';
+        overlay.style.display = 'flex';
+        overlay.style.opacity = '1';
+    }
+
+    function hideLoadingOverlay() {
+        const overlay = document.getElementById('loading-overlay');
+        if (overlay) {
+            overlay.style.opacity = '0';
+            setTimeout(() => { overlay.style.display = 'none'; }, 200);
         }
     }
 
