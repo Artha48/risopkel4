@@ -50,8 +50,6 @@
  ┣ 📂 frontend/
  ┃ ┣ 📜 index.html               # Antarmuka web (UI) — Sidebar & layout utama
  ┃ ┗ 📜 script.js                # Manipulasi DOM, integrasi API, & rendering step-by-step
- ┣ 📜 MANUAL_BOOK_CODE.md        # Panduan penjelasan teknis arsitektur kode
- ┣ 📜 TESTING_DOKUMENTASI.md     # Dokumen pengujian Uji Kelayakan Sistem (Testing)
  ┗ 📜 requirements.txt           # Daftar pustaka (dependencies) Python
 ```
 
